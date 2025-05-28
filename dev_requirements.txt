@@ -1,0 +1,6 @@
+pillow
+pandas
+numpy
+transformers
+torch
+tqdm
