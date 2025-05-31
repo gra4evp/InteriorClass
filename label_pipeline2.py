@@ -4,6 +4,8 @@ from tqdm import tqdm
 import pandas as pd
 from transformers import pipeline
 import warnings
+import csv
+import shutil
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -12,7 +14,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 class InteriorClassifier:
     """Классификатор состояния интерйера с использованием Qwen2.5-VL модели через pipeline"""
     
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
+    def __init__(self, model_name: str, base_prompt: str):
         """
         Инициализация классификатора
         
@@ -34,18 +36,7 @@ class InteriorClassifier:
         )
         
         # Системный промпт для классификации на английском (модель лучше понимает английский)
-        self.prompt_template = """
-        Analyze the interior photo and classify its condition. Choose ONLY ONE class from:
-        - A0: No finish (bare walls, concrete)
-        - A1: Needs major renovation (severe wear)
-        - B0: Basic finish (white-box)
-        - B1: Needs cosmetic repairs
-        - C0: Good condition
-        - C1: Excellent condition (with furniture)
-        - D0: Premium renovation (design project)
-        - D1: Luxury (exclusive)
-        Respond STRICTLY with ONLY the class label (e.g. "C0").
-        """
+        self.base_prompt = base_prompt
     
     def get_model_response(self, image_path: str, custom_prompt: str | None = None) -> str:
         """
@@ -110,27 +101,37 @@ class InteriorClassifier:
         with Image.open(image_path) as img:
             img.verify()
         
+        if custom_prompt is None:
+            custom_prompt = self.base_prompt
+        
         # Формируем сообщение для модели
-        messages = [
+        inputs = [
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_path},
-                    {"type": "text", "text": custom_prompt or self.prompt_template}
+                    {"type": "text", "text": custom_prompt}
                 ]
             }
         ]
         
         # Получаем ответ от модели
-        response = self.pipe(
-            messages,
+        outputs = self.pipe(
+            inputs,
             max_new_tokens=10,
             do_sample=False,
             temperature=0.01
         )
+
+        response_content = ""
+        if outputs:
+            generated_text: list[dict] = outputs[0]["generated_text"]
+            for item_dict in generated_text:
+                if item_dict["role"] == "assistant":
+                    response_content = item_dict["content"]
+                    break
         
-        #return response[0]["generated_text"] if response else ""
-        return response
+        return response_content
     
     def parse_model_response(self, raw_response: str) -> str:
         """
@@ -166,7 +167,7 @@ class InteriorClassifier:
             predicted_class = self.parse_model_response(raw_response)
             
             return {
-                "image": os.path.basename(image_path),
+                "image_filename": os.path.basename(image_path),
                 "class": predicted_class,
                 "raw_response": raw_response
             }
@@ -175,34 +176,58 @@ class InteriorClassifier:
             error_msg = f"Error processing {image_path}: {str(e)}"
             print(error_msg)
             return {
-                "image": os.path.basename(image_path),
+                "image_filename": os.path.basename(image_path),
                 "class": "ERROR",
                 "raw_response": error_msg
             }
     
     def process_directory(
-        self, 
-        image_dir: str, 
+        self,
+        image_dir: str,
+        output_dir: str,
         output_csv: str = "results.csv",
         extensions: tuple = (".jpg", ".png", ".jpeg")
-    ) -> pd.DataFrame:
-        """Обработка всех изображений в директории"""
-        results = []
-        image_files = [
-            f for f in os.listdir(image_dir) 
-            if f.lower().endswith(extensions)
-        ]
+    ) -> None:
+        """
+        Обрабатывает изображения и сортирует по папкам классов
+        с постепенной записью результатов в CSV.
+        """
+        # Создаем корневую директорию для результатов
+        os.makedirs(output_dir, exist_ok=True)
         
-        for img_file in tqdm(image_files, desc="Обработка изображений"):
-            image_path = os.path.join(image_dir, img_file)
-            result = self.classify_image(image_path)
-            results.append(result)
+        # Путь к итоговому CSV
+        csv_path = os.path.join(output_dir, output_csv)
         
-        # Сохраняем результаты
-        df = pd.DataFrame(results)
-        df.to_csv(output_csv, index=False)
-        print(f"Результаты сохранены в {output_csv}")
-        return df
+        # Заголовки CSV
+        fieldnames = ["image_filename", "class", "raw_response"]
+        
+        # Открываем CSV для постепенной записи
+        with open(csv_path, mode='w', newline='', encoding='utf-8') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            # Обрабатываем каждое изображение
+            for img_file in tqdm(
+                [f for f in os.listdir(image_dir) if f.lower().endswith(extensions)],
+                desc="Обработка изображений"
+            ):
+                image_path = os.path.join(image_dir, img_file)
+                result = self.classify_image(image_path)
+                
+                # Создаем папку класса (A0, A1... ERROR)
+                class_dir = os.path.join(output_dir, result["class"])
+                os.makedirs(class_dir, exist_ok=True)
+                
+                # Копируем изображение в папку класса
+                shutil.copy2(
+                    image_path,
+                    os.path.join(class_dir, img_file)
+                )
+                
+                # Записываем результат в CSV
+                writer.writerow(result)
+        
+        print(f"\nГотово! Результаты в {output_dir}")
 
 
 def main():
