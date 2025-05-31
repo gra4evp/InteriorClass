@@ -47,9 +47,109 @@ class InteriorClassifier:
         Respond STRICTLY with ONLY the class label (e.g. "C0").
         """
     
+    def get_model_response(self, image_path: str, custom_prompt: str | None = None) -> str:
+        """
+        Получает сырой ответ от модели для изображения
+        
+        Args:
+            image_path: Путь к изображению
+            custom_prompt: Опциональный кастомный промпт
+            
+        Returns:
+        =========================== FULL RESPONSE EXAMPLE FOR list input messages with len = 1 ================================
+        [
+          {
+            "input_text":[
+              {
+                "role":"user",
+                "content":[
+                  {
+                    "type":"image",
+                    "image":"<image_path>"
+                  },
+                  {
+                    "type":"text",
+                    "text":"<my_prompt>"
+                  }
+                ]
+              }
+            ],
+            "generated_text":[
+              {
+                "role":"user",
+                "content":[
+                  {
+                    "type":"image",
+                    "image":"<image_path>"
+                  },
+                  {
+                    "type":"text",
+                    "text":"<my_prompt>"
+                  }
+                ]
+              },
+              {
+                "role":"assistant",
+                "content":"B1"
+              }
+            ]
+          }
+        ]
+        ==================================================================================================================      
+        Полный текстовый ответ от модели
+            
+        Raises:
+            FileNotFoundError: Если изображение не найдено
+            Exception: При других ошибках обработки изображения
+        """
+        # Проверяем существование файла
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        # Проверяем валидность изображения
+        with Image.open(image_path) as img:
+            img.verify()
+        
+        # Формируем сообщение для модели
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image_path},
+                    {"type": "text", "text": custom_prompt or self.prompt_template}
+                ]
+            }
+        ]
+        
+        # Получаем ответ от модели
+        response = self.pipe(
+            messages,
+            max_new_tokens=10,
+            do_sample=False,
+            temperature=0.01
+        )
+        
+        #return response[0]["generated_text"] if response else ""
+        return response
+    
+    def parse_model_response(self, raw_response: str) -> str:
+        """
+        Парсит ответ модели и извлекает класс интерьера
+        
+        Args:
+            raw_response: Сырой текстовый ответ от модели
+            
+        Returns:
+            Класс интерьера (A0, A1, ..., D1) или "ERROR" если не удалось распознать
+        """
+        for token in ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"]:
+            if token in raw_response:
+                return token
+        return "ERROR"
+    
     def classify_image(self, image_path: str, custom_prompt: str | None = None) -> dict[str, str]:
         """
-        Классифицирует изображение интерьера
+        Классифицирует изображение интерьера (объединяет get_model_response и parse_model_response)
         
         Args:
             image_path: Путь к изображению
@@ -62,52 +162,16 @@ class InteriorClassifier:
             - raw_response: полный ответ модели
         """
         try:
-            # Проверяем существование файла
-            if not os.path.exists(image_path):
-                raise FileNotFoundError(f"Image file not found: {image_path}")
-            
-            # Открываем изображение для проверки его валидности
-            with Image.open(image_path) as img:
-                img.verify()  # Проверяем, что изображение не повреждено
-            
-            # Формируем сообщение в формате, ожидаемом моделью
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": image_path},  # Локальный путь к изображению
-                        {"type": "text", "text": custom_prompt or self.prompt_template}
-                    ]
-                }
-            ]
-            
-            # Отправляем запрос в модель
-            # pipe автоматически обработает изображение и промпт
-            response = self.pipe(
-                messages,
-                max_new_tokens=10,  # Ограничиваем длину ответа
-                do_sample=False,    # Для детерминированных результатов
-                temperature=0.01    # Минимизируем случайность
-            )
-            
-            # Извлекаем текст ответа
-            full_response = response[0]["generated_text"] if response else ""
-            
-            # Парсим класс - ищем первую подходящую метку в ответе
-            predicted_class = "ERROR"
-            for token in ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"]:
-                if token in full_response:
-                    predicted_class = token
-                    break
+            raw_response = self.get_model_response(image_path, custom_prompt)
+            predicted_class = self.parse_model_response(raw_response)
             
             return {
                 "image": os.path.basename(image_path),
                 "class": predicted_class,
-                "raw_response": full_response
+                "raw_response": raw_response
             }
             
         except Exception as e:
-            # Обработка ошибок с сохранением информации
             error_msg = f"Error processing {image_path}: {str(e)}"
             print(error_msg)
             return {

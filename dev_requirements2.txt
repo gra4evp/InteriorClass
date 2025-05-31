@@ -5,6 +5,7 @@ pandas>=2.0.0
 tiktoken>=0.5.0
 matplotlib>=3.7.0
 einops>=0.7.0
+jupyter  # Для разработки в ноутбуках
 
 # Специфичные для Qwen2.5-VL
 qwen-vl-utils[decord]==0.0.8  # Для обработки мультимодальных данных
