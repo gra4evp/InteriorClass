@@ -1,4 +1,5 @@
 import os
+import random
 from PIL import Image
 from tqdm import tqdm
 import pandas as pd
@@ -6,6 +7,9 @@ from transformers import pipeline
 import warnings
 import csv
 import shutil
+from typing import Dict, List
+from pathlib import Path
+
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
@@ -37,101 +41,53 @@ class InteriorClassifier:
         
         # Системный промпт для классификации на английском (модель лучше понимает английский)
         self.base_prompt = base_prompt
-    
-    def get_model_response(self, image_path: str, custom_prompt: str | None = None) -> str:
+
+    def build_few_shot_prompt(
+        self,
+        target_image_path: str,
+        reference_images: Dict[str, List[str]],  # {"A0": ["path1.jpg", ...]}
+        custom_prompt: str | None = None,
+        max_examples_per_class: int = 2
+    ) -> List[dict]:
         """
-        Получает сырой ответ от модели для изображения
+        Формирует few-shot запрос с динамически выбираемыми примерами
         
         Args:
-            image_path: Путь к изображению
-            custom_prompt: Опциональный кастомный промпт
+            target_image_path: Путь к классифицируемому изображению
+            reference_images: Словарь {класс: [пути_к_изображениям]}
+            max_examples_per_class: Количество примеров на класс (по умолчанию 2)
             
         Returns:
-        =========================== FULL RESPONSE EXAMPLE FOR list input messages with len = 1 ================================
-        [
-          {
-            "input_text":[
-              {
-                "role":"user",
-                "content":[
-                  {
-                    "type":"image",
-                    "image":"<image_path>"
-                  },
-                  {
-                    "type":"text",
-                    "text":"<my_prompt>"
-                  }
-                ]
-              }
-            ],
-            "generated_text":[
-              {
-                "role":"user",
-                "content":[
-                  {
-                    "type":"image",
-                    "image":"<image_path>"
-                  },
-                  {
-                    "type":"text",
-                    "text":"<my_prompt>"
-                  }
-                ]
-              },
-              {
-                "role":"assistant",
-                "content":"B1"
-              }
-            ]
-          }
-        ]
-        ==================================================================================================================      
-        Полный текстовый ответ от модели
-            
-        Raises:
-            FileNotFoundError: Если изображение не найдено
-            Exception: При других ошибках обработки изображения
+            Готовый messages для pipeline
         """
-        # Проверяем существование файла
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"Image file not found: {image_path}")
-        
-        # Проверяем валидность изображения
-        with Image.open(image_path) as img:
-            img.verify()
-        
-        if custom_prompt is None:
-            custom_prompt = self.base_prompt
-        
-        # Формируем сообщение для модели
-        inputs = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": image_path},
-                    {"type": "text", "text": custom_prompt}
-                ]
-            }
+        # Начало промпта
+        content = [
+            {"type": "text", "text": self.base_prompt},
+            {"type": "text", "text": "\nReference examples:"}
         ]
         
-        # Получаем ответ от модели
-        outputs = self.pipe(
-            inputs,
-            max_new_tokens=10,
-            do_sample=False,
-            temperature=0.01
-        )
+        # Добавляем примеры для каждого класса
+        for class_label, paths in reference_images.items():
+            if not paths:
+                continue
 
-        response_content = ""
-        if outputs:
-            generated_text: list[dict] = outputs[0]["generated_text"]
-            for item_dict in generated_text:
-                if item_dict["role"] == "assistant":
-                    response_content = item_dict["content"]
-                    break
+            selected_paths = paths[:max_examples_per_class]
+            
+            # Добавляем в контент
+            for path in selected_paths:
+                content.extend([
+                    {"type": "image", "image": path},
+                    {"type": "text", "text": f"Class: {class_label}"}
+                ])
         
-        return response_content
+        # Добавляем целевое изображение
+        content.extend([
+            {"type": "text", "text": "\nNow classify THIS image:"},
+            {"type": "image", "image": target_image_path},
+            {"type": "text", "text": "Answer ONLY with class label:"}
+        ])
+        
+        return [{"role": "user", "content": content}]
     
     def parse_model_response(self, raw_response: str) -> str:
         """
@@ -148,7 +104,13 @@ class InteriorClassifier:
                 return token
         return "ERROR"
     
-    def classify_image(self, image_path: str, custom_prompt: str | None = None) -> dict[str, str]:
+    def classify_image(
+            self,
+            image_path: str,
+            custom_prompt: str | None = None,
+            reference_images: Dict[str, List[str]] | None = None,
+            max_examples_per_class: int = 2
+        ) -> dict[str, str]:
         """
         Классифицирует изображение интерьера (объединяет get_model_response и parse_model_response)
         
@@ -162,8 +124,27 @@ class InteriorClassifier:
             - class: предсказанный класс
             - raw_response: полный ответ модели
         """
+        if reference_images is not None:
+            messages = self.build_few_shot_prompt(
+                target_image_path=image_path,
+                reference_images=reference_images,
+                max_examples_per_class=max_examples_per_class
+            )
+        else:
+            prompt = self.base_prompt
+            if custom_prompt is not None:
+                prompt = custom_prompt
+            
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image_path},
+                    {"type": "text", "text": prompt}
+                ]
+            }]
+
         try:
-            raw_response = self.get_model_response(image_path, custom_prompt)
+            raw_response = self._get_model_response(imputs=messages)
             predicted_class = self.parse_model_response(raw_response)
             
             return {
@@ -182,12 +163,12 @@ class InteriorClassifier:
             }
     
     def process_directory(
-        self,
-        image_dir: str,
-        output_dir: str,
-        output_csv: str = "results.csv",
-        extensions: tuple = (".jpg", ".png", ".jpeg")
-    ) -> None:
+            self,
+            image_dir: str,
+            output_dir: str,
+            output_csv: str = "results.csv",
+            extensions: tuple = (".jpg", ".png", ".jpeg")
+        ) -> None:
         """
         Обрабатывает изображения и сортирует по папкам классов
         с постепенной записью результатов в CSV.
@@ -228,6 +209,143 @@ class InteriorClassifier:
                 writer.writerow(result)
         
         print(f"\nГотово! Результаты в {output_dir}")
+    
+    def __call__(
+            self,
+            image_path: str,
+            custom_prompt: str | None = None,
+            reference_images: Dict[str, List[str]] | None = None,
+            max_examples_per_class: int = 2
+        ) -> dict[str, str]:
+
+        # Проверяем существование файла
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        # Проверяем валидность изображения
+        with Image.open(image_path) as img:
+            img.verify()
+
+        return self.classify_image(
+            image_path=image_path,
+            custom_prompt=custom_prompt,
+            reference_images=reference_images,
+            max_examples_per_class=max_examples_per_class
+        )
+    
+    def _get_model_response(
+            self,
+            inputs: List[Dict],
+            max_new_tokens: int = 10,
+            do_samples: bool = False,
+            temperature: float = 0.01
+        ) -> str:
+        """
+        Инкапсулированная логика получения ответа
+        ====================== FULL RESPONSE EXAMPLE FOR list inputs messages with len = 1 ===========================
+        [
+          {
+            "input_text":[
+              {
+                "role":"user",
+                "content":[
+                  {
+                    "type":"image",
+                    "image":"<image_path>"
+                  },
+                  {
+                    "type":"text",
+                    "text":"<my_prompt>"
+                  }
+                ]
+              }
+            ],
+            "generated_text":[
+              {
+                "role":"user",
+                "content":[
+                  {
+                    "type":"image",
+                    "image":"<image_path>"
+                  },
+                  {
+                    "type":"text",
+                    "text":"<my_prompt>"
+                  }
+                ]
+              },
+              {
+                "role":"assistant",
+                "content":"B1"
+              }
+            ]
+          }
+        ]
+        ===========================================================================================
+        """
+        outputs = self.pipe(
+            inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_samples,
+            temperature=temperature
+        )
+
+        response_content = ""
+        if outputs:
+            generated_text: list[dict] = outputs[0]["generated_text"]
+            assistant_message = generated_text[-1]
+            response_content = assistant_message["content"]
+        
+        return response_content
+
+
+
+def generate_class_label2ref_images(
+    ref_images_dirpath: Path,
+    max_files_per_class: int | None = None,
+    shuffle_files: bool = True
+) -> Dict[str, List[str]]:
+    """
+    Генерирует словарь {класс: [пути_к_изображениям]} с возможностью ограничения количества
+    и случайного выбора файлов.
+    
+    Args:
+        ref_images_dirpath: Путь к директории с эталонными изображениями
+        max_files_per_class: Максимальное количество файлов на класс (None - без ограничений)
+        shuffle_files: Если True, выбирает случайные файлы (в пределах max_files_per_class)
+    
+    Returns:
+        Словарь с алфавитно отсортированными классами и путями к изображениям
+    """
+    class_label2ref_images = {}
+    
+    # Получаем и сортируем папки классов по имени
+    class_dirs = sorted(
+        [d for d in ref_images_dirpath.iterdir() if d.is_dir()],
+        key=lambda x: x.name
+    )
+    
+    for class_dir in class_dirs:
+        # Находим все подходящие файлы в папке класса
+        image_paths = []
+        for ext in ("*.jpg", "*.png"):
+            image_paths.extend(class_dir.glob(ext))
+        
+        # Преобразуем Path в строки и сортируем по имени файла
+        image_paths = sorted([str(p) for p in image_paths], key=lambda x: Path(x).name)
+        
+        # Применяем случайный выбор и ограничение количества
+        if shuffle_files:
+            random.shuffle(image_paths)
+        if max_files_per_class is not None:
+            image_paths = image_paths[:max_files_per_class]
+        
+        # Сохраняем отсортированный результат
+        class_label2ref_images[class_dir.name] = sorted(image_paths)
+    
+    return class_label2ref_images
+
+
 
 
 def main():
