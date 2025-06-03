@@ -104,12 +104,16 @@ Detailed classification criteria:
 - Example: space ready for final decoration
 
 [B1] Needs cosmetic repairs (30-50% wear):
-- Functional utilities
-- Worn laminate/linoleum
-- Peeling wallpaper
-- Paint cracks
-- Outdated but working plumbing
-- Example: 5-7 year old housing
+- Functional utilities (electrical/plumbing)
+- Worn/damaged flooring (laminate/linoleum/parquet/floorboards)
+- Peeling/swollen baseboards or ceiling finishes
+- Faded, peeling, or cracked paint/tile
+- Outdated/damaged furniture/doors/windows
+- Faded or peeling wallpaper
+- Cracks in paint/plaster/tile
+- Functional but outdated plumbing
+- Worn bathtub/shower/sink/toilet
+- Example: Housing after 5-7 years of use
 
 [C0] Good condition:
 - Finishes <5 years old
