@@ -7,55 +7,63 @@ from transformers import pipeline
 import warnings
 import csv
 import shutil
-from typing import Dict, List
+from typing import Dict, List, Any
 from pathlib import Path
+import torch
+import traceback
 
 
 warnings.filterwarnings("ignore", category=FutureWarning, module="huggingface_hub")
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 
 
-class InteriorClassifier:
-    """Классификатор состояния интерйера с использованием Qwen2.5-VL модели через pipeline"""
+class InteriorImageClassifier:
+    """Классификатор состояния изображений интерйера с использованием Qwen2.5-VL модели через pipeline"""
     
-    def __init__(self, model_name: str, base_prompt: str):
+    def __init__(
+            self,
+            model_name: str,
+            base_prompt: str,
+            device_map: str | Dict[str, int | str | torch.device]= "auto",  # GPU/CPU
+            torch_dtype: str | torch.dtype | None = "auto"  # "auto" is torch.bfloat16
+        ):
         """
         Инициализация классификатора
         
         Args:
             model_name: Название модели из Hugging Face Hub
         """
-        # Инициализируем pipeline для работы с изображениями и текстом
-        # Указываем:
-        # - task: "image-text-to-text" (мультимодальная задача)
-        # - model: имя модели
-        # - device_map: "auto" для автоматического выбора GPU/CPU
-        # - torch_dtype: float16 для экономии памяти
         self.pipe = pipeline(
-            "image-text-to-text",
+            task="image-text-to-text",  # (мультимодальная задача)
             model=model_name,
-            device_map="auto",
-            torch_dtype="auto",  # Автоматически выберет подходящий тип данных
+            device_map=device_map,
+            torch_dtype=torch_dtype,  # torch.float16,  # Автоматически выберет подходящий тип данных
+            quantization_config={
+                "quant_method": "bitsandbytes",
+                "load_in_4bit": True,
+                "bnb_4bit_quant_type": "nf4",
+            },
+            attn_implementation="flash_attention_2",
+            use_fast=True,  # `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor.
             trust_remote_code=True  # Необходимо для кастомных моделей
         )
         
-        # Системный промпт для классификации на английском (модель лучше понимает английский)
+        # Системный промпт для классификации (модель лучше понимает английский)
         self.base_prompt = base_prompt
 
     def build_few_shot_prompt(
         self,
-        target_image_path: str,
-        reference_images: Dict[str, List[str]],  # {"A0": ["path1.jpg", ...]}
-        custom_prompt: str | None = None,
-        max_examples_per_class: int = 2
+        target_image: Image.Image,
+        class_label2ref_images: Dict[str, List[Image.Image]],
+        max_examples_per_class: int = 1
     ) -> List[dict]:
         """
         Формирует few-shot запрос с динамически выбираемыми примерами
         
         Args:
             target_image_path: Путь к классифицируемому изображению
-            reference_images: Словарь {класс: [пути_к_изображениям]}
-            max_examples_per_class: Количество примеров на класс (по умолчанию 2)
+            class_label2ref_images: Словарь {метка класса: [PIL изображения]}
+            max_examples_per_class: Количество примеров на класс (по умолчанию 1)
             
         Returns:
             Готовый messages для pipeline
@@ -67,23 +75,21 @@ class InteriorClassifier:
         ]
         
         # Добавляем примеры для каждого класса
-        for class_label, paths in reference_images.items():
-            if not paths:
-                continue
-
-            selected_paths = paths[:max_examples_per_class]
-            
-            # Добавляем в контент
-            for path in selected_paths:
-                content.extend([
-                    {"type": "image", "image": path},
-                    {"type": "text", "text": f"Class: {class_label}"}
-                ])
+        for class_label, images in class_label2ref_images.items():
+            if images:
+                selected_images = images[:max_examples_per_class]
+                
+                # Добавляем в контент
+                for image in selected_images:
+                    content.extend([
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": f"Class: {class_label}"}
+                    ])
         
         # Добавляем целевое изображение
         content.extend([
             {"type": "text", "text": "\nNow classify THIS image:"},
-            {"type": "image", "image": target_image_path},
+            {"type": "image", "image": target_image},
             {"type": "text", "text": "Answer ONLY with class label:"}
         ])
         
@@ -106,16 +112,16 @@ class InteriorClassifier:
     
     def classify_image(
             self,
-            image_path: str,
+            image: Image.Image,
             custom_prompt: str | None = None,
-            reference_images: Dict[str, List[str]] | None = None,
-            max_examples_per_class: int = 2
+            class_label2ref_images: Dict[str, List[Image.Image]] | None = None,
+            max_examples_per_class: int = 1
         ) -> dict[str, str]:
         """
         Классифицирует изображение интерьера (объединяет get_model_response и parse_model_response)
         
         Args:
-            image_path: Путь к изображению
+            image: Путь к изображению
             custom_prompt: Опциональный кастомный промпт
             
         Returns:
@@ -124,10 +130,10 @@ class InteriorClassifier:
             - class: предсказанный класс
             - raw_response: полный ответ модели
         """
-        if reference_images is not None:
+        if class_label2ref_images is not None:
             messages = self.build_few_shot_prompt(
-                target_image_path=image_path,
-                reference_images=reference_images,
+                target_image=image,
+                class_label2ref_images=class_label2ref_images,
                 max_examples_per_class=max_examples_per_class
             )
         else:
@@ -138,98 +144,49 @@ class InteriorClassifier:
             messages = [{
                 "role": "user",
                 "content": [
-                    {"type": "image", "image": image_path},
+                    {"type": "image", "image": image},
                     {"type": "text", "text": prompt}
                 ]
             }]
 
         try:
-            raw_response = self._get_model_response(imputs=messages)
+            raw_response = self._get_model_response(inputs=messages)
             predicted_class = self.parse_model_response(raw_response)
-            
-            return {
-                "image_filename": os.path.basename(image_path),
-                "class": predicted_class,
-                "raw_response": raw_response
-            }
+            return {"class": predicted_class, "raw_response": raw_response}
             
         except Exception as e:
-            error_msg = f"Error processing {image_path}: {str(e)}"
+            traceback.print_exc()
+            error_msg = f"Error during processing: {str(e)}"
             print(error_msg)
-            return {
-                "image_filename": os.path.basename(image_path),
-                "class": "ERROR",
-                "raw_response": error_msg
-            }
-    
-    def process_directory(
-            self,
-            image_dir: str,
-            output_dir: str,
-            output_csv: str = "results.csv",
-            extensions: tuple = (".jpg", ".png", ".jpeg")
-        ) -> None:
-        """
-        Обрабатывает изображения и сортирует по папкам классов
-        с постепенной записью результатов в CSV.
-        """
-        # Создаем корневую директорию для результатов
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Путь к итоговому CSV
-        csv_path = os.path.join(output_dir, output_csv)
-        
-        # Заголовки CSV
-        fieldnames = ["image_filename", "class", "raw_response"]
-        
-        # Открываем CSV для постепенной записи
-        with open(csv_path, mode='w', newline='', encoding='utf-8') as csv_file:
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            # Обрабатываем каждое изображение
-            for img_file in tqdm(
-                [f for f in os.listdir(image_dir) if f.lower().endswith(extensions)],
-                desc="Обработка изображений"
-            ):
-                image_path = os.path.join(image_dir, img_file)
-                result = self.classify_image(image_path)
-                
-                # Создаем папку класса (A0, A1... ERROR)
-                class_dir = os.path.join(output_dir, result["class"])
-                os.makedirs(class_dir, exist_ok=True)
-                
-                # Копируем изображение в папку класса
-                shutil.copy2(
-                    image_path,
-                    os.path.join(class_dir, img_file)
-                )
-                
-                # Записываем результат в CSV
-                writer.writerow(result)
-        
-        print(f"\nГотово! Результаты в {output_dir}")
+            # return {"class": "ERROR", "raw_response": error_msg}
     
     def __call__(
             self,
-            image_path: str,
+            image: Image.Image,
             custom_prompt: str | None = None,
-            reference_images: Dict[str, List[str]] | None = None,
-            max_examples_per_class: int = 2
+            class_label2ref_images: Dict[str, List[Image.Image]] | None = None,
+            max_examples_per_class: int = 1
         ) -> dict[str, str]:
-
-        # Проверяем существование файла
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"Image file not found: {image_path}")
+        """
+        Прямой вызов классификатора
         
-        # Проверяем валидность изображения
-        with Image.open(image_path) as img:
-            img.verify()
+        Args:
+            image: PIL Image объект
+            custom_prompt: Опциональный кастомный промпт
+            class_label2ref_images: Словарь с референсными изображениями
+            max_examples_per_class: Максимальное количество примеров на класс
+            
+        Returns:
+            Словарь с результатами классификации
+        """
+        # Проверяем только тип изображения
+        if not isinstance(image, Image.Image):
+            raise ValueError(f"Expected PIL.Image, got {type(image)}")
 
         return self.classify_image(
-            image_path=image_path,
+            image=image,
             custom_prompt=custom_prompt,
-            reference_images=reference_images,
+            class_label2ref_images=class_label2ref_images,
             max_examples_per_class=max_examples_per_class
         )
     
@@ -304,9 +261,9 @@ def generate_class_label2ref_images(
     ref_images_dirpath: Path,
     max_files_per_class: int | None = None,
     shuffle_files: bool = True
-) -> Dict[str, List[str]]:
+) -> Dict[str, List[Image.Image]]:
     """
-    Генерирует словарь {класс: [пути_к_изображениям]} с возможностью ограничения количества
+    Генерирует словарь {метка_класса: [изображения]} с возможностью ограничения количества
     и случайного выбора файлов.
     
     Args:
@@ -315,7 +272,7 @@ def generate_class_label2ref_images(
         shuffle_files: Если True, выбирает случайные файлы (в пределах max_files_per_class)
     
     Returns:
-        Словарь с алфавитно отсортированными классами и путями к изображениям
+        Словарь с алфавитно отсортированными классами и изображениями
     """
     class_label2ref_images = {}
     
@@ -331,20 +288,20 @@ def generate_class_label2ref_images(
         for ext in ("*.jpg", "*.png"):
             image_paths.extend(class_dir.glob(ext))
         
-        # Преобразуем Path в строки и сортируем по имени файла
-        image_paths = sorted([str(p) for p in image_paths], key=lambda x: Path(x).name)
-        
         # Применяем случайный выбор и ограничение количества
         if shuffle_files:
             random.shuffle(image_paths)
         if max_files_per_class is not None:
             image_paths = image_paths[:max_files_per_class]
-        
-        # Сохраняем отсортированный результат
-        class_label2ref_images[class_dir.name] = sorted(image_paths)
+
+        images = []
+        for path in sorted(image_paths, key=lambda x: Path(x).name):
+            images.append(Image.open(path))
+
+        # Сохраняем отсортированный результат и сортируем по имени файла
+        class_label2ref_images[class_dir.name] = images
     
     return class_label2ref_images
-
 
 
 
