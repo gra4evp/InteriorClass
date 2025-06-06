@@ -176,5 +176,5 @@ cython_debug/
 
 # profect files
 /data/cosmetic
-/data/labeled
+/data/labeled*
 /venv*
