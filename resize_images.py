@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 
 def resize_with_padding(
-        image: Image.Image,             # Принимаем готовое изображение вместо пути
+        image: Image.Image,
         target_size: tuple = (448, 448),
         padding_color: tuple = (255, 255, 255),
         maintain_aspect: bool = True,
