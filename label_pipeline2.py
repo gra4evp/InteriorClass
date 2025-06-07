@@ -302,28 +302,3 @@ def generate_class_label2ref_images(
         class_label2ref_images[class_dir.name] = images
     
     return class_label2ref_images
-
-
-
-def main():
-    # Конфигурация
-    config = {
-        "model_name": "Qwen/Qwen2.5-VL-7B-Instruct",
-        "image_dir": "data/cosmetic/cosmetic",
-        "output_csv": "labeled_results.csv"
-    }
-    
-    # Инициализация классификатора
-    classifier = InteriorClassifier(config["model_name"])
-    result = classifier.classify_image(image_path="/home/little-garden/CodeProjects/InteriorClass/data/cosmetic/cosmetic+/153001513_5.jpg")
-    for key, value in result.items():
-        print(key, value)
-    # # Запуск обработки
-    # classifier.process_directory(
-    #     image_dir=config["image_dir"],
-    #     output_csv=config["output_csv"]
-    # )
-
-
-if __name__ == "__main__":
-    main()

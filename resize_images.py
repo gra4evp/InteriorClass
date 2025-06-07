@@ -1,95 +1,107 @@
 import os
+from pathlib import Path
 from PIL import Image
 import numpy as np
 from tqdm import tqdm
 
-def resize_with_padding(image_path, target_size=(448, 448), padding_color=(255, 255, 255), maintain_aspect=True):
-    """
-    Resize image while maintaining aspect ratio and adding padding
-    
-    Args:
-        image_path: Path to the image
-        target_size: Target size (width, height)
-        padding_color: RGB color for padding (default: white)
-        maintain_aspect: If True, maintain aspect ratio with padding, if False, stretch to fit
-    """
-    img = Image.open(image_path)
-    
-    if maintain_aspect:
-        # Calculate aspect ratio
-        aspect_ratio = img.width / img.height
-        
-        if aspect_ratio > 1:
-            # Image is wider than tall
-            new_width = target_size[0]
-            new_height = int(new_width / aspect_ratio)
-        else:
-            # Image is taller than wide
-            new_height = target_size[1]
-            new_width = int(new_height * aspect_ratio)
-        
-        # Resize image
-        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
-        # Create new image with padding
-        new_img = Image.new("RGB", target_size, padding_color)
-        
-        # Calculate position to paste resized image
-        paste_x = (target_size[0] - new_width) // 2
-        paste_y = (target_size[1] - new_height) // 2
-        
-        # Paste resized image
-        new_img.paste(img, (paste_x, paste_y))
-    else:
-        # Simply resize to target size without maintaining aspect ratio
-        new_img = img.resize(target_size, Image.Resampling.LANCZOS)
-    
-    return new_img
 
-def process_directory(input_dir, output_dir, target_size=(448, 448), padding_color=(255, 255, 255), maintain_aspect=True):
+def resize_with_padding(
+        image: Image.Image,             # Принимаем готовое изображение вместо пути
+        target_size: tuple = (448, 448),
+        padding_color: tuple = (255, 255, 255),
+        maintain_aspect: bool = True,
+        resample_method: Image.Resampling = Image.Resampling.LANCZOS
+    ) -> Image.Image:
     """
-    Process all images in directory and its subdirectories
+    Resizes image with optional padding while maintaining aspect ratio
     
     Args:
-        input_dir: Input directory with class subdirectories
-        output_dir: Output directory for resized images
-        target_size: Target size for images
-        padding_color: RGB color for padding
-        maintain_aspect: Whether to maintain aspect ratio
+        image: PIL Image object (already loaded)
+        target_size: Desired (width, height) tuple
+        padding_color: RGB tuple for padding (default white)
+        maintain_aspect: Whether to preserve original aspect ratio
+        resample_method: Resampling filter (default LANCZOS for high quality)
+    
+    Returns:
+        Processed PIL Image
+    """
+    if not maintain_aspect:
+        return image.resize(target_size, resample_method)
+    
+    # Calculate optimal dimensions
+    width, height = image.size
+    target_width, target_height = target_size
+    
+    # Determine scaling ratio (use min to fit within target)
+    ratio = min(target_width / width, target_height / height)
+    new_size = (int(width * ratio), int(height * ratio))
+    
+    # Resize with high-quality filter
+    resized = image.resize(new_size, resample_method)
+    
+    # Create new image with padding if needed
+    if new_size != target_size:
+        padded = Image.new("RGB", target_size, padding_color)
+        paste_pos = (
+            (target_width - new_size[0]) // 2,
+            (target_height - new_size[1]) // 2
+        )
+        padded.paste(resized, paste_pos)
+        return padded
+    
+    return resized
+
+
+def process_directory(
+        input_dir: Path,
+        output_dir: Path,
+        target_size: tuple = (448, 448),
+        padding_color: tuple = (255, 255, 255),
+        maintain_aspect: bool = True
+    ) -> None:
+    """
+    Process all images in directory and its subdirectories with Path objects
+    
+    Args:
+        input_dir: Input directory with class subdirectories (Path)
+        output_dir: Output directory for resized images (Path)
+        target_size: Target size for images (default: (448, 448))
+        padding_color: RGB color for padding (default: white)
+        maintain_aspect: Whether to maintain aspect ratio (default: True)
     """
     # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Get all class directories
-    class_dirs = [d for d in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, d))]
+    class_dirs = [d for d in input_dir.iterdir() if d.is_dir()]
     
     for class_dir in tqdm(class_dirs, desc="Processing classes"):
         # Create class directory in output
-        class_output_dir = os.path.join(output_dir, class_dir)
-        os.makedirs(class_output_dir, exist_ok=True)
+        class_output_dir = output_dir / class_dir.name
+        class_output_dir.mkdir(exist_ok=True)
         
         # Get all images in class directory
-        class_input_dir = os.path.join(input_dir, class_dir)
-        image_files = [f for f in os.listdir(class_input_dir) 
-                      if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))]
+        image_files = [f for f in class_dir.iterdir() 
+                      if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.bmp', '.webp')]
         
-        for img_file in tqdm(image_files, desc=f"Processing {class_dir}", leave=False):
-            input_path = os.path.join(class_input_dir, img_file)
-            output_path = os.path.join(class_output_dir, img_file)
+        for img_file in tqdm(image_files, desc=f"Processing {class_dir.name}", leave=False):
+            output_path = class_output_dir / img_file.name
             
             try:
-                # Resize image
-                resized_img = resize_with_padding(
-                    input_path, 
-                    target_size=target_size,
-                    padding_color=padding_color,
-                    maintain_aspect=maintain_aspect
-                )
-                
-                # Save resized image
-                resized_img.save(output_path, quality=95)
+                # Load and process image
+                with Image.open(img_file) as img:
+                    resized_img = resize_with_padding(
+                        image=img,
+                        target_size=target_size,
+                        padding_color=padding_color,
+                        maintain_aspect=maintain_aspect
+                    )
+                    
+                    # Save resized image (preserve original format)
+                    resized_img.save(output_path, quality=95)
+                    
             except Exception as e:
-                print(f"Error processing {input_path}: {str(e)}")
+                print(f"Error processing {img_file}: {str(e)}")
 
 if __name__ == "__main__":
     input_directory = "/home/little-garden/CodeProjects/InteriorClass/data/reference_images"
