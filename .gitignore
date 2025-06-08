@@ -177,4 +177,6 @@ cython_debug/
 # profect files
 /data/cosmetic
 /data/labeled*
+/data/yandex_data
+/data/cian_data
 /venv*
