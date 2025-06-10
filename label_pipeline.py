@@ -108,6 +108,9 @@ class InteriorImageClassifier:
         for token in ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"]:
             if token in raw_response:
                 return token
+        for token in ["1", "0"]:
+            if token in raw_response:
+                return token
         return "ERROR"
     
     def classify_image(
@@ -115,7 +118,8 @@ class InteriorImageClassifier:
             image: Image.Image,
             custom_prompt: str | None = None,
             class_label2ref_images: Dict[str, List[Image.Image]] | None = None,
-            max_examples_per_class: int = 1
+            max_examples_per_class: int = 1,
+            max_new_tokens: int = 10
         ) -> dict[str, str]:
         """
         Классифицирует изображение интерьера (объединяет get_model_response и parse_model_response)
@@ -150,7 +154,7 @@ class InteriorImageClassifier:
             }]
 
         try:
-            raw_response = self._get_model_response(inputs=messages)
+            raw_response = self._get_model_response(inputs=messages, max_new_tokens=max_new_tokens)
             predicted_class = self.parse_model_response(raw_response)
             return {"class": predicted_class, "raw_response": raw_response}
             
@@ -165,7 +169,8 @@ class InteriorImageClassifier:
             image: Image.Image,
             custom_prompt: str | None = None,
             class_label2ref_images: Dict[str, List[Image.Image]] | None = None,
-            max_examples_per_class: int = 1
+            max_examples_per_class: int = 1,
+            max_new_tokens: int = 10
         ) -> dict[str, str]:
         """
         Прямой вызов классификатора
@@ -187,7 +192,8 @@ class InteriorImageClassifier:
             image=image,
             custom_prompt=custom_prompt,
             class_label2ref_images=class_label2ref_images,
-            max_examples_per_class=max_examples_per_class
+            max_examples_per_class=max_examples_per_class,
+            max_new_tokens=max_new_tokens
         )
     
     def _get_model_response(
