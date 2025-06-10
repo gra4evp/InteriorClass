@@ -76,6 +76,52 @@ BASE_PROMPT_RU = """
 """
 
 
+TRASH_FILTER_PROMPT_RU = """
+Ты эксперт по анализу фотографий недвижимости. Определи, является ли изображение мусором (непригодным для оценки интерьера). Отвечай ТОЛЬКО "1" (мусор) или "0" (интерьер).
+
+Категории мусора (всегда отвечай "1"):
+1. Фасады зданий (внешний вид домов)
+2. Подъезды/лестничные площадки
+3. Дворы/парковки/улицы
+4. Чертежи/планировки (схемы сверху)
+5. Фото документов/скриншоты
+6. Люди/животные крупным планом
+7. Пустые белые изображения (артефакты загрузки)
+8. Нефокусные/засвеченные кадры
+9. Части мебели без контекста комнаты
+10. Окна/двери крупным планом без вида помещения
+
+Если НИ ОДИН критерий не подходит - отвечай "0". Не объясняй.
+"""
+
+
+A0_ONLY_FILTER_PROMPT_RU = """
+Проанализируй фотографию чернового состояния помещения. Твоя задача помочь отфильтровать изображения в датасете, класс [A0] от всего остального [UNKNOWN].
+В ответе укажите ТОЛЬКО метку класса [A0]/[UNKNOWN] и его уверенность (например: "A0 8").
+[A0] Без отделки (черновое состояние):
+Отличительные черты:
+- Бетонные/кирпичные/необработанные стены без шпаклевки, штукатурки или декоративной отделки
+- Пол из черновой стяжки или голого бетона, без какого-либо покрытия (плитки, ламината и т.д.)
+- Потолок в виде бетонной плиты перекрытия без финишной отделки, возможно наличие открытых коммуникаций, проводки, монтажных петель.
+- Открытые инженерные коммуникации (трубы, провода, кабель-каналы)
+Исключающие признаки (если есть ХОТЯ БЫ ОДИН – это НЕ A0):
+- Наличие любой мебели, кухонной гарнитуры, техники. радиаторов, дверей, сантехники
+- Наличие межкомнатных дверей, подоконников.
+- Наличие даже частичной отделки (например, оштукатурены только стены или залита самовыравнивающаяся смесь на пол).
+
+
+ГЛАВНЫЙ КРИТЕРИЙ [A0]: Полное отсутствие финишных отделочных слоев на всех поверхностях.
+ПРИМЕР: Строительная коробка без отделки.
+
+
+ЛЮБОЕ ДРУГОЕ ИЗОБРАЖЕНИЕ не подходящее под описание классифицируй как [UNKNOWN]. Если есть исключающие признаки классифицируй как [UNKNOWN].
+Отвечайте ТОЛЬКО меткой класса [A0]/[UNKNOWN] и его уверенностью, без пояснений.
+"""
+
+# ==========================================================================================================================================
+# ==========================================================================================================================================
+
+
 BASE_PROMPT_EN = """
 Analyze the interior photo and classify its condition. Choose ONLY ONE class from the options below. Respond STRICTLY with ONLY the class label (e.g. "C0").
 
@@ -149,4 +195,48 @@ Detailed classification criteria:
 - Example: premium class residences
 
 Respond ONLY with the class label (A0, A1...D1) without explanations.
+"""
+
+
+TRASH_FILTER_PROMPT_EN = """
+You're a real estate photo analysis expert. Determine if the image is trash (unsuitable for interior assessment). Respond STRICTLY with "1" (trash) or "0" (interior).
+
+Trash categories (always answer "1"):
+
+1. A floor plan
+2. Building facades (exterior views)
+3. Stairwells/hallways
+4. Yards/parking lots/streets
+5. Floorplans/blueprints (top-down)
+6. Documents/screenshots
+7. Close-ups of people/animals
+8. Blank white images (upload artifacts)
+9. Blurry/overexposed shots
+10. Furniture parts without room context
+11. Close-up windows/doors without room view
+
+If NONE apply - answer "0". No explanations.
+"""
+
+A0_ONLY_FILTER_PROMPT_EN = """
+Analyze the photo of a rough construction state premises. Your task is to help filter dataset images into class [A0] versus everything else [UNKNOWN].
+In response, specify ONLY the class label [A0]/[UNKNOWN] and confidence score (e.g.: "A0 8").
+
+[A0] Unfinished (bare construction state):
+Distinctive features:
+- Concrete/brick/unprocessed walls without putty, plaster or decorative finishes
+- Floor with rough screed or bare concrete, without any covering (tiles, laminate, etc.)
+- Ceiling as bare concrete slab without finishing, possibly with exposed utilities, wiring or mounting hooks
+- Exposed engineering systems (pipes, wires, cable channels)
+
+Exclusion criteria (if ANY SINGLE ONE is present - it's NOT A0):
+- Presence of any furniture, kitchen units, appliances, radiators, doors, plumbing fixtures
+- Presence of interior doors, window sills
+- Presence of even partial finishing (e.g., only walls are plastered or self-leveling compound is applied to floor)
+
+CORE CRITERIA [A0]: Complete absence of finishing layers on all surfaces.
+EXAMPLE: Unfinished construction shell without any finishing.
+
+ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN]. If any exclusion criteria are present, classify as [UNKNOWN].
+Respond ONLY with the class label [A0]/[UNKNOWN] and confidence score, without explanations.
 """
