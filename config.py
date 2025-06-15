@@ -117,6 +117,59 @@ A0_ONLY_FILTER_PROMPT_RU = """
 """
 
 
+B1_ONLY_FILTER_PROMPT_RU = """
+Проанализируй фотографию помещения. Твоя задача — отфильтровать изображения класса [B1] (Требуется косметический ремонт) от всего остального [UNKNOWN].
+В ответе укажи ТОЛЬКО метку класса [B1]/[UNKNOWN] и уровень уверенности (например: "B1 8").
+
+[B1] Требуется косметический ремонт (износ 30-50%):
+ОТЛИЧИТЕЛЬНЫЕ ЧЕРТЫ:
+1) Стены:
+  - Выцвевшие или отслаивающиеся обои (особенно на стыках и углах)
+  - Потёртая или отваливающаяся краска, видимые пятна и загрязнения
+  - Трещины в штукатурке (до 5 мм), локальные отслоения покрытия
+  - Устаревшие пластиковые/деревянные панели с повреждениями
+2) Пол:
+  - Потёртый или вздутый ламинат/линолеум с видимыми стыками
+  - Паркет/доска с царапинами, потёртостями, локальными повреждениями
+  - Деформированные или отклеивающиеся плинтуса
+  - Плитка с трещинами или отсутствующими фрагментами
+3) Потолок:
+  - Потрескавшаяся побелка или краска
+  - Пожелтевшие натяжные потолки с провисаниями
+  - Видимые следы протечек (желтые пятна, разводы)
+  - Старые потолочные плитки с повреждениями
+4) Мебель и техника:
+  - Устаревшая или повреждённая мебель (сколы, потёртости, разболтанные механизмы)
+  - Видимый износ мягкой мебели (протёртая обивка, продавленные подушки)
+  - Рабочая, но морально устаревшая техника (старые модели холодильников, плит)
+  - Двери/окна с повреждённой фурнитурой, трудно открывающиеся
+5) Сантехника:
+  - Устаревшая, но рабочая сантехника (старые смесители, ржавые трубы)
+  - Изношенная ванна/душ (потертости эмали, желтые подтеки)
+  - Раковина/унитаз с трещинами или сколами
+  - Затирающаяся или скрипящая сантехника
+6) Общее состояние:
+  - Видимый общий износ всех поверхностей
+  - Локальные повреждения (царапины, сколы, трещины) на большинстве элементов
+  - Устаревшие цветовые решения и материалы (типичные для ремонтов 5-10 летней давности)
+  - Сохранившаяся функциональность при визуальном износе
+
+ИСКЛЮЧАЮЩИЕ ПРИЗНАКИ (если есть ХОТЯ БЫ ОДИН – это НЕ B1):
+- Полностью новые поверхности без следов износа
+- Свежие ремонтные работы (менее 2-3 лет)
+- Отсутствие видимых повреждений на основных элементах
+- Современные материалы и технологии ремонта
+- Дизайнерские решения и премиальные материалы
+
+ГЛАВНЫЙ КРИТЕРИЙ [B1]: Видимый износ всех поверхностей при сохранении базовой функциональности, характерный для жилья после 5-7 лет эксплуатации без капитального ремонта.
+ПРИМЕР: квартира с сохранившимся ремонтом, но требующая освежения.
+
+ЛЮБОЕ ДРУГОЕ ИЗОБРАЖЕНИЕ, не соответствующее описанию, классифицируй как [UNKNOWN].
+Если есть сомнения – помечай как [UNKNOWN].
+Отвечай ТОЛЬКО меткой класса [B1]/[UNKNOWN] и цифрой уверенности (1-10), без пояснений.
+"""
+
+
 D0_ONLY_FILTER_PROMPT_RU = """
 Проанализируй фотографию помещения. Твоя задача — отфильтровать изображения класса [D0] (Эксклюзив / Luxury) от всего остального [UNKNOWN].
 В ответе укажи ТОЛЬКО метку класса [D0]/[UNKNOWN] и уровень уверенности (например: "D0 9").
@@ -281,6 +334,7 @@ Trash categories (always answer "1"):
 If NONE apply - answer "0". No explanations.
 """
 
+
 A0_ONLY_FILTER_PROMPT_EN = """
 Analyze the photo of a rough construction state premises. Your task is to help filter dataset images into class [A0] versus everything else [UNKNOWN].
 In response, specify ONLY the class label [A0]/[UNKNOWN] and confidence score (e.g.: "A0 8").
@@ -302,6 +356,59 @@ EXAMPLE: Unfinished construction shell without any finishing.
 
 ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN]. If any exclusion criteria are present, classify as [UNKNOWN].
 Respond ONLY with the class label [A0]/[UNKNOWN] and confidence score, without explanations.
+"""
+
+
+B1_ONLY_FILTER_PROMPT_EN = """
+Analyze the photo of a residential space. Your task is to filter [B1] class images (Needs Cosmetic Renovation) from all others [UNKNOWN]. 
+Respond ONLY with the class label [B1]/[UNKNOWN] and confidence level (e.g. "B1 7").
+
+[B1] Requires Cosmetic Renovation (30-50% wear):
+DISTINCTIVE FEATURES:
+1) Walls:
+  - Faded or peeling wallpaper (especially at joints/corners)
+  - Worn or chipped paint, visible stains and dirt
+  - Cracks in plaster (up to 5mm), localized coating detachment
+  - Outdated plastic/wood panels with damage
+2) Floor:
+  - Worn or warped laminate/linoleum with visible seams
+  - Scratched/worn parquet/floorboards with localized damage
+  - Deformed or detached baseboards
+  - Cracked or missing tile fragments
+3) Ceiling:
+  - Cracked whitewash or paint
+  - Yellowed/stained stretch ceilings with sagging
+  - Visible water damage marks (stains, streaks)
+  - Damaged ceiling tiles
+4) Furniture and appliances:
+  - Outdated or damaged furniture (chips, wear, loose mechanisms)
+  - Worn upholstery (fabric wear, sagging cushions)
+  - Functional but obsolete appliances (old fridge/stove models)
+  - Doors/windows with damaged hardware, difficult operation
+5) Plumbing:
+  - Outdated but working fixtures (old faucets, rusty pipes)
+  - Worn bathtub/shower (enamel scratches, yellow stains)
+  - Cracked/chipped sink/toilet
+  - Sticking or squeaking fixtures
+6) Overall condition:
+  - Visible wear on all surfaces
+  - Localized damage (scratches, chips, cracks) on most elements
+  - Outdated color schemes/materials (typical of 5-10 year old renovations)
+  - Maintained functionality despite visual wear
+
+EXCLUSION CRITERIA (if ANY SINGLE ONE is present - it's NOT B1):
+- Completely new surfaces without wear
+- Recent renovations (<2-3 years old)
+- No visible damage on primary elements
+- Modern materials/renovation technologies
+- Designer solutions or premium materials
+
+KEY CRITERIA [B1]: Visible wear across all surfaces while maintaining basic functionality, characteristic of properties after 5-7 years of use without major renovation.
+EXAMPLE: Apartment with intact but visibly worn finishes needing refreshment.
+
+ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN].
+When in doubt, mark as [UNKNOWN].
+Respond ONLY with the class label [B1]/[UNKNOWN] and confidence number (1-10), no explanations.
 """
 
 
