@@ -117,6 +117,68 @@ A0_ONLY_FILTER_PROMPT_RU = """
 """
 
 
+A1_ONLY_FILTER_PROMPT_RU = """
+Проанализируй фотографию помещения. Твоя задача — отфильтровать изображения класса [A1] (Требуется капитальный ремонт) от всего остального [UNKNOWN].
+В ответе укажи ТОЛЬКО метку класса [A1]/[UNKNOWN] и уровень уверенности (например: "A1 8").
+
+[A1] Требуется капитальный ремонт (сильный износ >70%):
+ОТЛИЧИТЕЛЬНЫЕ ЧЕРТЫ:
+1) Стены:
+  - Глубокие трещины (>5 мм), сквозные повреждения
+  - Отваливающаяся штукатурка на больших площадях
+  - Видимая кладка или бетонная основа без отделки
+  - Плесень, грибок, обширные пятна от протечек
+  - Отслоение более 30% поверхности стен
+2) Пол:
+  - Разрушенная стяжка с ямами и неровностями
+  - Отсутствие финишного покрытия (голая бетонная плита)
+  - Прогнившие или проваливающиеся доски
+  - Многочисленные глубокие трещины в плитке
+  - Видимые коммуникации под полом
+3) Потолок:
+  - Обрушенные или отсутствующие участки потолка
+  - Массивные следы протечек с разрушением структуры
+  - Видимые балки перекрытия или плиты без отделки
+  - Плесень и грибок на более чем 30% поверхности
+  - Отслоение штукатурки на больших площадях
+4) Мебель и техника:
+  - Поломанная или отсутствующая мебель
+  - Разрушенные встроенные элементы (кухни, шкафы)
+  - Неисправная или опасная техника (оголенные провода)
+  - Двери/окна с разрушенными рамами или отсутствующие
+5) Сантехника:
+  - Ржавые или протекающие трубы по всему помещению
+  - Разрушенные сантехприборы (трещины в унитазах, ваннах)
+  - Отсутствие работоспособной сантехники
+  - Затопленные участки, стоячая вода
+6) Коммуникации:
+  - Оголенные или опасные электропровода
+  - Отсутствие розеток/выключателей или их повреждение
+  - Видимые проблемы с вентиляцией (разрушенные каналы)
+  - Неисправные системы отопления (проржавевшие радиаторы)
+7) Общее состояние:
+  - Аварийное состояние конструкций
+  - Множественные серьезные повреждения всех поверхностей
+  - Признаки длительного отсутствия ремонта (10+ лет)
+  - Опасные для проживания условия
+  - Разрушение более 70% поверхностей
+
+ИСКЛЮЧАЮЩИЕ ПРИЗНАКИ (если есть ХОТЯ БЫ ОДИН – это НЕ A1):
+- Сохраненные финишные покрытия на большинстве поверхностей
+- Отсутствие структурных повреждений конструкций
+- Работоспособные инженерные системы
+- Косметические повреждения без угрозы обрушения
+- Признаки недавнего ремонта (менее 5 лет)
+
+ГЛАВНЫЙ КРИТЕРИЙ [A1]: Критический износ конструкций и поверхностей, создающий опасные для проживания условия и требующий полной замены всех систем.
+ПРИМЕР: аварийное жилье с испорченными стенами, плесенью и неработающими коммуникациями.
+
+ЛЮБОЕ ДРУГОЕ ИЗОБРАЖЕНИЕ, не соответствующее описанию, классифицируй как [UNKNOWN].
+Если есть сомнения – помечай как [UNKNOWN].
+Отвечай ТОЛЬКО меткой класса [A1]/[UNKNOWN] и цифрой уверенности (1-10), без пояснений.
+"""
+
+
 B1_ONLY_FILTER_PROMPT_RU = """
 Проанализируй фотографию помещения. Твоя задача — отфильтровать изображения класса [B1] (Требуется косметический ремонт) от всего остального [UNKNOWN].
 В ответе укажи ТОЛЬКО метку класса [B1]/[UNKNOWN] и уровень уверенности (например: "B1 8").
@@ -356,6 +418,68 @@ EXAMPLE: Unfinished construction shell without any finishing.
 
 ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN]. If any exclusion criteria are present, classify as [UNKNOWN].
 Respond ONLY with the class label [A0]/[UNKNOWN] and confidence score, without explanations.
+"""
+
+
+A1_ONLY_FILTER_PROMPT_EN = """
+Analyze the photo of a premises. Your task is to filter images of class [A1] (Requires major renovation) from everything else [UNKNOWN].
+In your response, specify ONLY the class label [A1]/[UNKNOWN] and confidence level (e.g.: "A1 8").
+
+[A1] Requires major renovation (severe wear >70%):
+DISTINCTIVE FEATURES:
+1) Walls:
+  - Deep cracks (>5mm), through-and-through damage
+  - Falling plaster over large areas
+  - Visible masonry or concrete base without finishing
+  - Mold, fungus, extensive water stain marks
+  - Over 30% of wall surface peeling
+2) Floor:
+  - Destroyed screed with pits and unevenness
+  - Missing finish coating (bare concrete slab)
+  - Rotten or collapsing floorboards
+  - Numerous deep cracks in tiles
+  - Visible utilities under the floor
+3) Ceiling:
+  - Collapsed or missing ceiling sections
+  - Massive water damage with structural destruction
+  - Visible support beams or unfinished slabs
+  - Mold/fungus on over 30% of surface
+  - Plaster peeling over large areas
+4) Furniture and appliances:
+  - Broken or missing furniture
+  - Destroyed built-in elements (kitchens, cabinets)
+  - Malfunctioning or hazardous appliances (exposed wiring)
+  - Doors/windows with destroyed frames or missing
+5) Plumbing:
+  - Rusty or leaking pipes throughout premises
+  - Destroyed sanitaryware (cracked toilets, bathtubs)
+  - No working plumbing fixtures
+  - Flooded areas, standing water
+6) Utilities:
+  - Exposed or hazardous electrical wiring
+  - Missing/damaged sockets/switches
+  - Visible ventilation problems (destroyed ducts)
+  - Faulty heating systems (rusted radiators)
+7) General condition:
+  - Emergency structural condition
+  - Multiple serious damages to all surfaces
+  - Signs of long-term lack of maintenance (10+ years)
+  - Hazardous living conditions
+  - Over 70% surface deterioration
+
+EXCLUSION CRITERIA (if ANY SINGLE one is present – it's NOT A1):
+- Preserved finish coatings on most surfaces
+- No structural damage to building elements
+- Functional utility systems
+- Cosmetic damage without collapse risk
+- Signs of recent renovation (<5 years)
+
+MAIN CRITERION [A1]: Critical deterioration of structures and surfaces creating hazardous living conditions requiring complete replacement of all systems.
+EXAMPLE: emergency housing with collapsed walls, mold, and non-functional utilities.
+
+ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN].
+When in doubt – mark as [UNKNOWN].
+Respond ONLY with class label [A1]/[UNKNOWN] and confidence number (1-10), no explanations.
 """
 
 
