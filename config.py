@@ -131,10 +131,10 @@ A1_ONLY_FILTER_PROMPT_RU = """
   - Отслоение более 30% поверхности стен
 2) Пол:
   - Разрушенная стяжка с ямами и неровностями
-  - Отсутствие финишного покрытия (голая бетонная плита)
   - Прогнившие или проваливающиеся доски
   - Многочисленные глубокие трещины в плитке
   - Видимые коммуникации под полом
+  - Разорванный линоллеум
 3) Потолок:
   - Обрушенные или отсутствующие участки потолка
   - Массивные следы протечек с разрушением структуры
@@ -435,10 +435,10 @@ DISTINCTIVE FEATURES:
   - Over 30% of wall surface peeling
 2) Floor:
   - Destroyed screed with pits and unevenness
-  - Missing finish coating (bare concrete slab)
   - Rotten or collapsing floorboards
   - Numerous deep cracks in tiles
   - Visible utilities under the floor
+  - Torn linoleum
 3) Ceiling:
   - Collapsed or missing ceiling sections
   - Massive water damage with structural destruction
@@ -599,4 +599,145 @@ EXAMPLE: Residences with designer finishes, luxury apartments, boutique hotels.
 Classify ANY OTHER IMAGE that does not match the description as [UNKNOWN].
 If in doubt, mark it as [UNKNOWN]
 Answer ONLY with the class label [D1]/[UNKNOWN] and the confidence number (1-10), without explanation.
+"""
+
+
+D0_VS_D1_VS_UNKNOWN_PROMPT_RU = """
+Проанализируй фотографию помещения. Определи, относится ли оно к классу [D0] (качественный евроремонт) или [D1] (эксклюзивный luxury-ремонт).  
+В ответе укажи ТОЛЬКО метку класса [D0]/[D1]/[UNKNOWN] и уровень уверенности (1-10), (например: "D1 7" или "D0 9").  
+
+КРИТЕРИИ D0 (Евроремонт):
+1. Стены:
+- Декоративная штукатурка (венецианская, микроцемент), фактурная краска.  
+- Натуральные материалы: каменные/деревянные панели (без book-match).  
+- Умеренный декор: молдинги, ниши с подсветкой.  
+
+2. Пол:
+- Паркетная доска (дуб, ясень), керамогранит под камень.  
+- Бесшовные покрытия: наливные полы с декоративным эффектом.  
+
+3. Потолок:
+- Подвесные конструкции (гипсокартон, рейки) с точечной/ленточной подсветкой.  
+- Минималистичные многоуровневые потолки (без сложного дизайна, как в D1).  
+
+4. Мебель и техника:
+- Серийная мебель премиум-брендов (Poliform, B&B Italia).  
+- Встроенная техника (Miele, Gaggenau), скрытые фасады.  
+- VRF-кондиционирование.  
+
+5. Освещение:
+- Дизайнерские светильники (Flos, Artemide), базовая умная подсветка.  
+
+ИСКЛЮЧАЮЩИЕ ПРИЗНАКИ для D0 (если есть хотя бы один — это не D0):
+- Обои масс-маркет, гладкая покраска без фактуры, пластиковые панели.  
+- Ламинат, линолеум, дешевая плитка со швами.  
+- Побелка, натяжные потолки без интеграции света.  
+- Мебель IKEA/Hoff, видимые провода.
+
+
+КРИТЕРИИ D1 (Luxury/Эксклюзив):
+1. Стены:
+- Элитные материалы: book-match камень, редкие породы дерева, латунь/бронза.  
+- Ручная роспись, 3D-панели с подсветкой.  
+
+2. Пол:
+- Мрамор, гранит, бесшовные терраззо.  
+- Сложные узоры (например, инкрустация деревом).  
+
+3. Потолок:
+- Многоуровневые конструкции с интегрированным светом.  
+- Зеркальные/глянцевые поверхности, кессоны.  
+
+4. Мебель и техника:
+- Авторская мебель (bespoke), эксклюзивные гарнитуры.  
+- Полная автоматизация (KNX, Savant), скрытые мультирум-системы.  
+
+5. Освещение:
+- Дизайнерские люстры (например, Lobmeyr), скрытая динамическая подсветка.  
+
+ИСКЛЮЧАЮЩИЕ ПРИЗНАКИ для D1 (если нет хотя бы 2-3 из перечисленного — это не D1):**  
+- Масс-маркет материалы (плитка без дизайна, ЛДСП).  
+- Стандартная мебель, отсутствие умного дома.  
+- Простые ровные стены без декора.
+
+Важные уточнения:
+- Главное отличие D1 от D0: Наличие эксклюзивных материалов (book-match, мрамор), сложных дизайнерских решений (авторская мебель) и полной автоматизации.  
+- Если ремонт явно дешевле D0 (например, советская "хрущевка") — не классифицируй.  
+Если видишь на картинке что-то другое помечай как [UNKNOWN]
+ЛЮБОЕ ДРУГОЕ ИЗОБРАЖЕНИЕ, не соответствующее описаниям классов [D0]/[D1], классифицируй как [UNKNOWN].
+Если есть сомнения – помечай как [UNKNOWN]
+
+Формат ответа: Только "[D0/D1/[UNKNOWN]] [уверенность]", без пояснений.
+"""
+
+
+D0_VS_D1_VS_UNKNOWN_PROMPT_EN_PART1 = """
+Analyze the photo of a room. Determine whether it belongs to class [D0] (high-quality euro renovation) or [D1] (exclusive luxury renovation).  
+In your response, specify ONLY the class label [D0]/[D1]/[UNKNOWN] and confidence level (1-10), (for example: "D1 7" or "D0 9").  
+
+CRITERIA FOR D0 (Euro Renovation):
+1. Walls:
+- Decorative plaster (Venetian, microcement), textured paint.  
+- Natural materials: stone/wood panels (without book-match).  
+- Moderate decor: moldings, niches with lighting.  
+
+2. Floor:
+- Solid wood flooring (oak, ash), stone-effect porcelain tile.  
+- Seamless coatings: decorative self-leveling floors.  
+
+3. Ceiling:
+- Suspended structures (drywall, slats) with spot/linear lighting.  
+- Minimalist multi-level ceilings (without complex design like D1).  
+
+4. Furniture and appliances:
+- Premium brand serial furniture (Poliform, B&B Italia).  
+- Built-in appliances (Miele, Gaggenau), hidden facades.  
+- VRF air conditioning.  
+
+5. Lighting:
+- Designer fixtures (Flos, Artemide), basic smart lighting.  
+
+EXCLUSION CRITERIA for D0 (if at least one is present - it's not D0):
+- Mass-market wallpaper, smooth paint without texture, plastic panels.  
+- Laminate, linoleum, cheap tiles with visible seams.  
+- Whitewash, stretch ceilings without integrated lighting.  
+- IKEA/Hoff furniture, visible wires.
+"""
+
+
+
+D0_VS_D1_VS_UNKNOWN_PROMPT_EN_PART2 = """
+CRITERIA FOR D1 (Luxury/Exclusive):
+1. Walls:
+- Elite materials: book-match stone, rare wood types, brass/bronze.  
+- Hand-painted elements, 3D panels with lighting.  
+
+2. Floor:
+- Marble, granite, seamless terrazzo.  
+- Complex patterns (e.g., wood inlays).  
+
+3. Ceiling:
+- Multi-level structures with integrated lighting.  
+- Mirror/glossy surfaces, coffered ceilings.  
+
+4. Furniture and appliances:
+- Bespoke furniture, exclusive cabinetry.  
+- Full automation (KNX, Savant), hidden multi-room systems.  
+
+5. Lighting:
+- Designer chandeliers (e.g., Lobmeyr), hidden dynamic lighting.  
+
+EXCLUSION CRITERIA for D1 (if at least 2-3 of the following are missing - it's not D1):  
+- Mass-market materials (plain tiles, particleboard).  
+- Standard furniture, lack of smart home systems.  
+- Simple plain walls without decor.
+
+Important clarifications:
+- Key difference between D1 and D0: Presence of exclusive materials (book-match, marble), complex design solutions (bespoke furniture) and full automation.  
+- If the renovation is clearly cheaper than D0 (e.g., Soviet-era "khrushchyovka") - do not classify.  
+If you see something else in the image mark as [UNKNOWN]
+ANY OTHER IMAGE not matching [D0]/[D1] descriptions should be classified as [UNKNOWN].
+If in doubt - mark as [UNKNOWN]
+
+Answer ONLY with the class label [D0]/[D1]/[UNKNOWN] and the confidence number (1-10), without explanation.
 """
