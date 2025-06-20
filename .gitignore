@@ -180,4 +180,5 @@ cython_debug/
 /data/yandex_data
 /data/cian_data
 /data/floor_plans
+/data/interior_dataset
 /venv*
