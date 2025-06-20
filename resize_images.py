@@ -104,8 +104,8 @@ def process_directory(
                 print(f"Error processing {img_file}: {str(e)}")
 
 if __name__ == "__main__":
-    input_directory = "/home/little-garden/CodeProjects/InteriorClass/data/reference_images"
-    output_directory = "/home/little-garden/CodeProjects/InteriorClass/data/reference_images_resized"
+    input_directory = Path("/home/little-garden/CodeProjects/InteriorClass/data/reference_images/original")
+    output_directory = Path("/home/little-garden/CodeProjects/InteriorClass/data/reference_images/resized_448x448")
     
     # You can choose between these options:
     # 1. White padding (default)
