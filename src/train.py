@@ -160,18 +160,59 @@ def train():
     
     # Модель и оптимизатор
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = InteriorClassifier().to(device)
-    
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.OneCycleLR(
-        optimizer, 
-        max_lr=lr,
-        epochs=epochs,
-        steps_per_epoch=len(train_loader)
-    )
-    
-    # Цикл обучения (аналогично предыдущему, но с тестовой оценкой в конце)
-    # ... (ваш код обучения)
+    model = InteriorClassifier(num_classes=len(InteriorDataset.CLASSES)).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+    # Цикл обучения
+    for epoch in range(epochs):
+        model.train()
+        train_loss = 0.0
+        
+        for inputs, labels in train_loader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+            train_loss += loss.item() * inputs.size(0)
+        
+        scheduler.step()
+        
+        # Валидация
+        model.eval()
+        val_loss = 0.0
+        all_preds = []
+        all_labels = []
+        
+        with torch.no_grad():
+            for inputs, labels in val_loader:
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                
+                val_loss += loss.item() * inputs.size(0)
+                _, preds = torch.max(outputs, 1)
+                
+                all_preds.extend(preds.cpu().numpy())
+                all_labels.extend(labels.cpu().numpy())
+        
+        # Метрики
+        train_loss = train_loss / len(train_loader.dataset)
+        val_loss = val_loss / len(val_loader.dataset)
+        report = classification_report(
+            all_labels, all_preds, 
+            target_names=InteriorDataset.CLASSES,
+            zero_division=0
+        )
+        
+        print(f"Epoch {epoch+1}/{epochs}")
+        print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        print(report)
     
     # Финальная оценка на тестовом наборе
     model.eval()

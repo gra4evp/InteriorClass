@@ -195,7 +195,7 @@ class InteriorImageClassifier:
             max_examples_per_class=max_examples_per_class,
             max_new_tokens=max_new_tokens
         )
-    
+
     def _get_model_response(
             self,
             inputs: List[Dict],
