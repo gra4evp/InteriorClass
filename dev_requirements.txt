@@ -5,6 +5,8 @@ pandas>=2.0.0
 tiktoken>=0.5.0
 matplotlib>=3.7.0
 einops>=0.7.0
+albumentations
+timm
 jupyter  # Для разработки в ноутбуках
 
 # Специфичные для Qwen2.5-VL
