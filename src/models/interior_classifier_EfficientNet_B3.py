@@ -1,4 +1,5 @@
 from torch import nn
+import timm  # Библиотека для современных архитектур
 
 
 class InteriorClassifier(nn.Module):
