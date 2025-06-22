@@ -54,26 +54,34 @@ class InteriorDataset(Dataset):
         return image_tensor, class_idx
 
     @classmethod
-    def collect_samples(cls, dataset_dir: Path) -> List[tuple[Path, int]]:
+    def collect_samples(
+        cls, 
+        dataset_dir: Path, 
+        extensions: tuple[str, ...] = ('.jpg', '.jpeg', '.png')
+    ) -> List[tuple[Path, int]]:
         """Collect samples with both path and numerical index.
         
         Args:
             dataset_dir: Root directory containing class folders
-            
+            extensions: Allowed file extensions (default: .jpg, .jpeg, .png)
+                
         Returns:
             List of (image_path, class_index) tuples
         """
         samples = []
+        allowed_extensions = {ext.lower() for ext in extensions}
+        
         for class_dir in tqdm(sorted(dataset_dir.iterdir()), desc="Collecting samples..."):
             if class_dir.is_dir() and class_dir.name in cls.CLASSES:
                 class_idx = cls.CLASSES.index(class_dir.name)
 
                 class_samples = []
                 for filepath in sorted(class_dir.iterdir()):
-                    if filepath.is_file():
+                    if filepath.is_file() and filepath.suffix.lower() in allowed_extensions:
                         class_samples.append((filepath, class_idx))
                 
                 samples.extend(class_samples)
+        
         return samples
 
 
