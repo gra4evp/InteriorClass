@@ -89,7 +89,8 @@ class DatasetSplitter:
     
     def split(
         self, 
-        samples: List[Tuple[Path, int]]
+        samples: List[Tuple[Path, int]],
+        shuffle: bool = True
     ) -> Tuple[List[Tuple[Path, int]], List[Tuple[Path, int]], List[Tuple[Path, int]]]:
         """Основной метод для разделения данных."""
         class_to_samples = self._group_samples_by_class(samples)
@@ -97,7 +98,7 @@ class DatasetSplitter:
         train, val, test = [], [], []
         for class_name, class_samples in class_to_samples.items():
             cfg = self.split_config[class_name]
-            t, v, te = self._split_class_samples(class_samples, cfg)
+            t, v, te = self._split_class_samples(class_samples, cfg, shuffle=shuffle)
             train.extend(t)
             val.extend(v)
             test.extend(te)
@@ -126,10 +127,13 @@ class DatasetSplitter:
     @staticmethod
     def _split_class_samples(
         samples: List[Tuple[Path, int]], 
-        config: SplitConfig
+        config: SplitConfig,
+        shuffle: bool = True
     ) -> Tuple[List, List, List]:
         """Разделяет выборки одного класса."""
-        random.shuffle(samples)
+        if shuffle:
+            random.shuffle(samples)
+        
         n_total = len(samples)
         
         n_train = int(n_total * config.train)

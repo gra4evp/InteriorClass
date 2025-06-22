@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 from sklearn.metrics import classification_report
-import timm  # Библиотека для современных архитектур
+
 
 
 def train():
