@@ -1,3 +1,6 @@
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional
+
 MODEL_NAME = "Qwen/Qwen2.5-VL-7B-Instruct"
 
 
@@ -24,3 +27,28 @@ SPLIT_RATIO = {
 
 # Минимальное количество примеров для val и test
 MIN_VAL_TEST_PER_CLASS = 20  # Гарантируем хотя бы по 20 на val и test
+
+class TrainingConfig(BaseModel):
+    # Пути
+    data_dir: str
+    exp_dir: str
+    checkpoint_path: Optional[str] = None
+    log_path: Optional[str] = None
+
+    # Гиперпараметры
+    batch_size: int = 32
+    epochs: int = 10
+    lr: float = 3e-5
+    img_size: int = 380
+    random_seed: int = RANDOM_SEED
+
+    # Классы и сплит
+    class_labels: List[str] = CLASS_LABELS
+    split_ratio: Dict[str, Dict[str, float]] = SPLIT_RATIO
+    min_val_test_per_class: int = MIN_VAL_TEST_PER_CLASS
+
+    # Модель
+    model_name: str = MODEL_NAME
+
+    # Прочее
+    device: Optional[str] = None
