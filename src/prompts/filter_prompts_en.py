@@ -154,7 +154,7 @@ EXAMPLE: Apartment with intact but visibly worn finishes needing refreshment.
 
 ANY OTHER IMAGE not matching this description should be classified as [UNKNOWN].
 When in doubt, mark as [UNKNOWN].
-Respond ONLY with the class label [B1]/[UNKNOWN] and confidence number (1-10), no explanations.
+Answer ONLY with the class label [B1]/[UNKNOWN] AND ALWAYS WITH the confidence number (1-10), without explanation.
 """
 
 

@@ -181,4 +181,5 @@ cython_debug/
 /data/cian_data
 /data/floor_plans
 /data/interior_dataset
+/data/streets_facades
 /venv*
