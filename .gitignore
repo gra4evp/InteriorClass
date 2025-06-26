@@ -182,4 +182,5 @@ cython_debug/
 /data/floor_plans
 /data/interior_dataset
 /data/streets_facades
+/data/B1_annotation_snapshot
 /venv*

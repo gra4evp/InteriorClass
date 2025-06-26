@@ -6,7 +6,7 @@ import torch
 
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report
-from src.config import TrainingConfig
+from src.config import TrainingConfig, CLASS_LABELS
 from pydantic import BaseModel
 
 
@@ -78,7 +78,7 @@ class Trainer:
         train_loss = 0.0
         train_bar = tqdm(
             self.train_loader,
-            desc=f'Epoch {epoch}/{self.config.epochs} [Train]',
+            desc=f'Epoch {epoch}/{self.epochs} [Train]',
             postfix={'loss': '?', 'lr': self.optimizer.param_groups[0]['lr']},
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
@@ -101,7 +101,7 @@ class Trainer:
         return train_loss / len(self.train_loader.dataset)
     
     def train(self) -> torch.nn.Module:
-        for epoch in range(1, self.config.epochs + 1):
+        for epoch in range(1, self.epochs + 1):
             train_loss = self.train_epoch(epoch)
             val_loss, val_accuracy, report = self.validate(epoch)
             self.log_dict["train_loss"].append(train_loss)
@@ -144,7 +144,7 @@ class Trainer:
         all_labels: List[int] = []
         val_bar = tqdm(
             self.val_loader,
-            desc=f'Epoch {epoch}/{self.config.epochs} [Val]',
+            desc=f'Epoch {epoch}/{self.epochs} [Val]',
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
         with torch.no_grad():
@@ -162,7 +162,7 @@ class Trainer:
         val_loss = val_loss / len(self.val_loader.dataset)
         report = classification_report(
             all_labels, all_preds,
-            target_names=self.config.class_labels,
+            target_names=CLASS_LABELS,
             zero_division=0,
             digits=4,
             output_dict=True
@@ -189,7 +189,7 @@ class Trainer:
 
         final_report = classification_report(
             test_labels, test_preds,
-            target_names=self.config.class_labels,
+            target_names=CLASS_LABELS,
             digits=4,
             output_dict=True
         )

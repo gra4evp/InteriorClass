@@ -1,4 +1,5 @@
 from pathlib import Path
+import warnings
 from torch.utils.data import Dataset
 import numpy as np
 from tqdm import tqdm
@@ -7,6 +8,15 @@ from typing import List
 from PIL import Image
 # from sklearn.metrics import classification_report
 import albumentations as A
+
+
+# Убираем только конкретное предупреждение Pillow о палитровых изображениях
+warnings.filterwarnings(
+    "ignore", 
+    category=UserWarning, 
+    message="Palette images with Transparency.*",
+    module="PIL.Image"
+)
 
 
 class InteriorDataset(Dataset):

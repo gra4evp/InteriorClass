@@ -19,9 +19,8 @@ from src.trainer import Trainer
 if __name__ == "__main__":
 
     # 1. Собираем все пути
-    current_dir = Path.cwd()
-    root_project = current_dir.parent
-    data_dir = root_project / "data"
+    project_root = Path.cwd()
+    data_dir = project_root / "data"
     print(f"data_dir: {data_dir}")
 
     dataset_dir = data_dir / "interior_dataset"
@@ -101,7 +100,7 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(model.parameters(), lr=LR)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
-    experiments_dir = root_project / "experiments"
+    experiments_dir = project_root / "experiments"
     exp_dir = experiments_dir / f"exp{EXP_NUMBER:03d}"
     exp_results_dir = exp_dir / "results"
     exp_results_dir.mkdir(parents=True, exist_ok=True)
