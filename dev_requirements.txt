@@ -8,6 +8,7 @@ einops>=0.7.0
 albumentations
 timm
 scikit-learn
+seaborn
 jupyter  # Для разработки в ноутбуках
 
 # Специфичные для Qwen2.5-VL
