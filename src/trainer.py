@@ -2,10 +2,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import json
 from tqdm import tqdm
+
 import torch
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 
 from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from src.config import TrainingConfig, CLASS_LABELS
 from pydantic import BaseModel
 
@@ -98,12 +103,16 @@ class Trainer:
             })
 
         self.scheduler.step()
-        return train_loss / len(self.train_loader.dataset)
+        train_loss = round(train_loss / len(self.train_loader.dataset), 4)
+        return train_loss
     
     def train(self) -> torch.nn.Module:
         for epoch in range(1, self.epochs + 1):
             train_loss = self.train_epoch(epoch)
-            val_loss, val_accuracy, report = self.validate(epoch)
+
+            # ========================== VALIDATION REPORT ==============================
+            val_loss, val_report = self.validate(epoch)
+            val_accuracy = round(val_report['accuracy'], 4)
             self.log_dict["train_loss"].append(train_loss)
             self.log_dict["val_loss"].append(val_loss)
             self.log_dict["val_accuracy"].append(val_accuracy)
@@ -112,9 +121,9 @@ class Trainer:
             print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
             print(f"Val Accuracy: {val_accuracy:.4f}")
             print(
-                f"Macro Avg: P={report['macro avg']['precision']:.4f} "
-                f"R={report['macro avg']['recall']:.4f} "
-                f"F1={report['macro avg']['f1-score']:.4f}\n"
+                f"Macro Avg: P={val_report['macro avg']['precision']:.4f} "
+                f"R={val_report['macro avg']['recall']:.4f} "
+                f"F1={val_report['macro avg']['f1-score']:.4f}\n"
             )
             
             if val_loss < self.best_val_loss:
@@ -123,25 +132,31 @@ class Trainer:
                 self.save_checkpoint(epoch, val_loss, val_accuracy)
                 print(f"Checkpoint saved to {self.checkpoint_path} (Val Loss improved to {val_loss:.4f})")
             self.save_log()
-        test_accuracy, final_report = self.test()
+        
+        # =========================== TEST REPORT ==========================
+        test_report, conf_matrix_dict = self.test()
 
         print("\nFinal Test Results:")
-        print(f"Test Accuracy: {test_accuracy:.4f}")
+        print(f"Test Accuracy: {test_report['accuracy']:.4f}")
         print(
-            f"Macro Avg: P={final_report['macro avg']['precision']:.4f} "
-            f"R={final_report['macro avg']['recall']:.4f} "
-            f"F1={final_report['macro avg']['f1-score']:.4f}"
+            f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "
+            f"R={test_report['macro avg']['recall']:.4f} "
+            f"F1={test_report['macro avg']['f1-score']:.4f}"
         )
-        self.log_dict["test_accuracy"] = test_accuracy
-        self.log_dict["test_report"] = final_report
+
+        self.log_dict["test_report"] = test_report
+        self.log_dict["confusion_matrix"] = conf_matrix_dict
         self.save_log()
+
         return self.model
 
-    def validate(self, epoch: int) -> Tuple[float, float, Dict[str, Any]]:
+    def validate(self, epoch: int) -> Tuple[float, Dict[str, Any]]:
         self.model.eval()
+
         val_loss = 0.0
-        all_preds: List[int] = []
         all_labels: List[int] = []
+        all_preds: List[int] = []
+        
         val_bar = tqdm(
             self.val_loader,
             desc=f'Epoch {epoch}/{self.epochs} [Val]',
@@ -155,20 +170,23 @@ class Trainer:
                 val_loss += loss.item() * inputs.size(0)
                 _, preds = torch.max(outputs, 1)
 
-                all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
+                all_preds.extend(preds.cpu().numpy())
+                
                 val_bar.set_postfix({'val_loss': f'{loss.item():.4f}'})
 
-        val_loss = val_loss / len(self.val_loader.dataset)
+        val_loss = round(val_loss / len(self.val_loader.dataset), 4)
+
         report = classification_report(
-            all_labels, all_preds,
+            all_labels,
+            all_preds,
             target_names=CLASS_LABELS,
             zero_division=0,
             digits=4,
             output_dict=True
         )
-        val_accuracy = report['accuracy']
-        return val_loss, val_accuracy, report
+
+        return val_loss, report
 
     def test(self) -> Tuple[float, Dict[str, Any]]:
         self.model.eval()
@@ -187,14 +205,27 @@ class Trainer:
                 test_preds.extend(preds.cpu().numpy())
                 test_labels.extend(labels.cpu().numpy())
 
-        final_report = classification_report(
+        report = classification_report(
             test_labels, test_preds,
             target_names=CLASS_LABELS,
+            zero_division=0,
             digits=4,
             output_dict=True
         )
-        test_accuracy = final_report['accuracy']
-        return test_accuracy, final_report
+
+        # Generate confusion matrix
+        conf_matrix = confusion_matrix(test_labels, test_preds)
+        
+        # Convert to dictionary for JSON serialization
+        conf_matrix_dict = {
+            "matrix": conf_matrix.tolist(),
+            "labels": CLASS_LABELS
+        }
+
+        # Save confusion matrix plot
+        self._save_confusion_matrix_plot(conf_matrix=conf_matrix)
+
+        return report, conf_matrix_dict
 
     def to_config(self) -> TrainingConfig:
         """
@@ -223,3 +254,36 @@ class Trainer:
             with open(self.log_path, "r") as f:
                 self.log_dict = json.load(f)
             self.best_val_loss = self.log_dict.get("best_val_loss", float("inf"))
+
+    def _save_confusion_matrix_plot(self, conf_matrix):
+        plt.figure(figsize=(10, 8))
+        df_cm = pd.DataFrame(
+            conf_matrix, 
+            index=CLASS_LABELS,
+            columns=CLASS_LABELS
+        )
+        sns.heatmap(df_cm, annot=True, fmt='d', cmap='Blues')
+        plt.title('Confusion Matrix')
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        
+        plot_path = self.exp_results_dir / "confusion_matrix.png"
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close()
+        
+        # Also save normalized version
+        cm_normalized = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis]
+        plt.figure(figsize=(10, 8))
+        df_cm_norm = pd.DataFrame(
+            cm_normalized, 
+            index=CLASS_LABELS,
+            columns=CLASS_LABELS
+        )
+        sns.heatmap(df_cm_norm, annot=True, fmt='.2f', cmap='Blues')
+        plt.title('Normalized Confusion Matrix')
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        
+        plot_norm_path = self.exp_results_dir / "confusion_matrix_normalized.png"
+        plt.savefig(plot_norm_path, bbox_inches='tight')
+        plt.close()

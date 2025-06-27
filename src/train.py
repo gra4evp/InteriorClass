@@ -17,8 +17,16 @@ from src.trainer import Trainer
 
 
 if __name__ == "__main__":
+    # 1. =========================== Define hyperparameters ===========================
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    BATCH_SIZE = 32
+    EPOCHS = 10
+    LR = 3e-5
+    IMG_SIZE = 380  # Для EfficientNet-B3
+    EXP_NUMBER = 4
 
-    # 1. Собираем все пути
+
+    # 2. ================================ Define paths =================================
     project_root = Path.cwd()
     data_dir = project_root / "data"
     print(f"data_dir: {data_dir}")
@@ -28,48 +36,41 @@ if __name__ == "__main__":
     samples = InteriorDataset.collect_samples(dataset_dir=dataset_dir)
     print(f"Total samples: {len(samples)}")
 
-    # 2. Создание сплиттера
+
+    # 3. ============================= Create DatasetSplitter ===========================
     splitter = DatasetSplitter(
         class_labels=CLASS_LABELS,
         split_config=SPLIT_RATIO,
         random_seed=RANDOM_SEED
     )
 
-    # Разделение данных
     train_samples, val_samples, test_samples = splitter.split(samples, shuffle=True)
     print(f"Train samples: {len(train_samples)}")
     print(f"Val samples: {len(val_samples)}")
     print(f"Test samples: {len(test_samples)}")
 
-    # Конфигурация
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    BATCH_SIZE = 32
-    EPOCHS = 10
-    LR = 3e-5
-    IMG_SIZE = 380  # Для EfficientNet-B3
-    EXP_NUMBER = 2
 
-    # 3. Datasets
+    # 4. =============================== Create Datasets ==================================
     train_dataset = InteriorDataset(
         train_samples,
-        transform=get_transforms(mode='train'),
+        transform=get_transforms(img_size=IMG_SIZE, mode='train'),
         mode='train'
     )
 
     val_dataset = InteriorDataset(
         val_samples,
-        transform=get_transforms(mode='val'),
+        transform=get_transforms(img_size=IMG_SIZE, mode='val'),
         mode='val'
     )
 
     test_dataset = InteriorDataset(
         test_samples,
-        transform=get_transforms(mode='test'),
+        transform=get_transforms(img_size=IMG_SIZE, mode='test'),
         mode='test'
     )
 
 
-    # 4. DataLoaders
+    # 5. ============================= Create DataLoaders ==================================
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=BATCH_SIZE,
@@ -95,6 +96,8 @@ if __name__ == "__main__":
         pin_memory=True
     )
 
+
+    # 6. =============================== Initializing model ===================================
     model = InteriorClassifier(num_classes=len(CLASS_LABELS)).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LR)
@@ -105,7 +108,13 @@ if __name__ == "__main__":
     exp_results_dir = exp_dir / "results"
     exp_results_dir.mkdir(parents=True, exist_ok=True)
 
-    # Запуск обучения
+    checkpoint_path = exp_results_dir / "best_model.pth"
+    if checkpoint_path.exists():
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+
+    # 7. ======================= Creating Trainer and start train =============================
     trainer = Trainer(
         model=model,
         criterion=criterion,
