@@ -95,26 +95,102 @@ class InteriorDataset(Dataset):
         return samples
 
 
+# def get_transforms(mode='train', img_size=380):
+#     """Аугментации для разных этапов"""
+#     if mode == 'train':
+#         return A.Compose([
+#             A.Resize(img_size, img_size),
+#             A.HorizontalFlip(p=0.5),
+#             A.Affine(
+#                 translate_percent=0.1,  # аналог shift_limit
+#                 scale=(0.85, 1.15),     # аналог scale_limit
+#                 rotate=(-30, 30),       # аналог rotate_limit
+#                 p=0.5
+#             ),
+#             A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
+#             A.CoarseDropout(
+#                 num_holes_range=(3, 6),     # Диапазон количества "дыр" (бывший max_holes)
+#                 hole_height_range=(16, 32),  # Диапазон высоты (бывший max_height)
+#                 hole_width_range=(16, 32),   # Диапазон ширины (бывший max_width)
+#                 fill=0,                # Значение для заливки (0 для чёрного)
+#                 p=0.3
+#             ),
+#             A.Normalize(
+#                 mean=[0.485, 0.456, 0.406],
+#                 std=[0.229, 0.224, 0.225]
+#             ),
+#             A.ToTensorV2()
+#         ])
+#     else:  # val/test
+#         return A.Compose([
+#             A.Resize(img_size, img_size),
+#             A.Normalize(
+#                 mean=[0.485, 0.456, 0.406],
+#                 std=[0.229, 0.224, 0.225]
+#             ),
+#             A.ToTensorV2()
+#         ])
+
+
 def get_transforms(mode='train', img_size=380):
-    """Аугментации для разных этапов"""
     if mode == 'train':
         return A.Compose([
+            # Обязательные для всех изображений
             A.Resize(img_size, img_size),
+            
+            # Группа 1: Геометрические искажения (выбираем ТОЛЬКО ОДНО)
+            A.OneOf([
+                A.Affine(
+                    translate_percent=0.1,
+                    scale=(0.85, 1.15),
+                    rotate=(-30, 30),
+                    p=1.0
+                ),
+                A.Perspective(scale=(0.05, 0.1), p=1.0),
+                A.RandomSizedCrop(
+                    min_max_height=(int(img_size*0.7), img_size),
+                    size=(img_size, img_size),
+                    p=1.0
+                ),
+            ], p=0.7),  # 70% вероятность применить геометрию
+            
+            # Группа 2: Цветовые искажения (выбираем ТОЛЬКО ОДНО)
+            A.OneOf([
+                A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=1.0),
+                A.HueSaturationValue(hue_shift_limit=10, sat_shift_limit=15, p=1.0),
+                A.RandomGamma(gamma_limit=(80, 120), p=1.0),
+                A.CLAHE(clip_limit=2, p=1.0),
+            ], p=0.5),  # 50% вероятность применить цвет
+            
+            # Группа 3: Шумы/Артефакты (выбираем ТОЛЬКО ОДНО)
+            A.OneOf([
+                A.GaussNoise(std_range=(0.1, 0.2), p=1.0),
+                A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0),
+                A.Blur(blur_limit=3, p=1.0),
+                A.ImageCompression(quality_range=(20, 40), p=1.0),
+            ], p=0.3),  # 30% вероятность применить шум
+            
+            # Группа 4: Локальные повреждения (выбираем ТОЛЬКО ОДНО)
+            A.OneOf([
+                A.CoarseDropout(
+                    num_holes_range=(3, 6),     # Диапазон количества "дыр" (бывший max_holes)
+                    hole_height_range=(16, 32),  # Диапазон высоты (бывший max_height)
+                    hole_width_range=(16, 32),   # Диапазон ширины (бывший max_width)
+                    fill=0,                # Значение для заливки (0 для чёрного)
+                    p=0.3
+                ),
+                A.RandomShadow(
+                    shadow_roi=(0, 0, 1, 1),
+                    num_shadows_limit=(1, 3),
+                    shadow_dimension=5,
+                    p=1.0
+                ),
+                # Для синтетических повреждений используй внешние маски:
+                # A.Lambda(name='mold_effect', ...)
+            ], p=0.4),  # 40% вероятность
+            
+            # Всегда применяемые (без конфликтов)
             A.HorizontalFlip(p=0.5),
-            A.Affine(
-                translate_percent=0.1,  # аналог shift_limit
-                scale=(0.85, 1.15),     # аналог scale_limit
-                rotate=(-30, 30),       # аналог rotate_limit
-                p=0.5
-            ),
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
-            A.CoarseDropout(
-                num_holes_range=(3, 6),     # Диапазон количества "дыр" (бывший max_holes)
-                hole_height_range=(16, 32),  # Диапазон высоты (бывший max_height)
-                hole_width_range=(16, 32),   # Диапазон ширины (бывший max_width)
-                fill=0,                # Значение для заливки (0 для чёрного)
-                p=0.3
-            ),
             A.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
@@ -130,33 +206,3 @@ def get_transforms(mode='train', img_size=380):
             ),
             A.ToTensorV2()
         ])
-
-def create_datasets(data_dir):
-    """Создание датасетов с аугментациями"""
-    train_samples, val_samples, test_samples = get_train_val_test_split(data_dir)
-    
-    train_ds = InteriorDataset(
-        train_samples,
-        transform=get_transforms(mode='train'),
-        mode='train'
-    )
-    
-    val_ds = InteriorDataset(
-        val_samples,
-        transform=get_transforms(mode='val'),
-        mode='val'
-    )
-    
-    test_ds = InteriorDataset(
-        test_samples,
-        transform=get_transforms(mode='test'),
-        mode='test'
-    )
-    
-    return train_ds, val_ds, test_ds
-
-
-
-
-
-
