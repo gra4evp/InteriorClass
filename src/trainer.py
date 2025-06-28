@@ -1,3 +1,4 @@
+# src/trainer.py
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import json
@@ -136,7 +137,7 @@ class Trainer:
         # =========================== TEST REPORT ==========================
         test_report, conf_matrix_dict = self.test()
 
-        print("\nFinal Test Results:")
+        print("Final Test Results:")
         print(f"Test Accuracy: {test_report['accuracy']:.4f}")
         print(
             f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "

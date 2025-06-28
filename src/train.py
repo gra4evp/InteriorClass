@@ -1,3 +1,4 @@
+# src/train.py
 from pathlib import Path
 import json
 
@@ -23,7 +24,7 @@ if __name__ == "__main__":
     EPOCHS = 10
     LR = 3e-5
     IMG_SIZE = 380  # Для EfficientNet-B3
-    EXP_NUMBER = 4
+    EXP_NUMBER = 5
 
 
     # 2. ================================ Define paths =================================
