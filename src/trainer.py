@@ -260,14 +260,14 @@ class Trainer:
     @property
     def checkpoint_path(self) -> Path:
         if self._current_epoch is None:
-            return self.exp_results_dir / "best_checkpoint.pth"
-        return self.exp_results_dir / f"best_checkpoint_epoch{self._current_epoch:02d}.pth"
+            return self.exp_results_dir / "ckpt.pth"
+        return self.exp_results_dir / f"ckpt_epoch{self._current_epoch:02d}.pth"
 
     @property
     def model_path(self) -> Path:
         if self._current_epoch is None:
-            return self.exp_results_dir / "best_model.pth"
-        return self.exp_results_dir / f"best_model_epoch{self._current_epoch:02d}.pth"
+            return self.exp_results_dir / "model.pth"
+        return self.exp_results_dir / f"model_epoch{self._current_epoch:02d}.pth"
 
     def _load_log(self) -> None:
         if self.log_path.exists():

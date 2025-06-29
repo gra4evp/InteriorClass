@@ -109,10 +109,50 @@ if __name__ == "__main__":
     exp_results_dir = exp_dir / "results"
     exp_results_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_path = exp_results_dir / "best_model.pth"
-    if checkpoint_path.exists():
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
+    def load_latest_file(pattern: str) -> Path | None:
+        """Находит самый свежий файл по паттерну"""
+        files = list(exp_results_dir.glob(pattern))
+        if not files:
+            return None
+        # Сортируем по дате изменения (новейший первый)
+        files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        return files[0]
+
+    # Пытаемся загрузить чекпоинт
+    checkpoint_path = load_latest_file("ckpt*")
+    if checkpoint_path:
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
+            print(f"Loaded checkpoint from: {checkpoint_path.name}")
+            
+            model.load_state_dict(checkpoint['model_state_dict'])
+            if 'optimizer_state_dict' in checkpoint:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            print(f"Successfully loaded checkpoint (epoch {checkpoint.get('epoch', 'unknown')})")
+        except Exception as e:
+            print(f"Error loading checkpoint {checkpoint_path}: {str(e)}")
+            checkpoint_path = None
+
+    # Если чекпоинта нет, пробуем загрузить полную модель
+    if not checkpoint_path:
+        model_path = load_latest_file("model*")
+        if model_path:
+            try:
+                # Для полной модели не нужен load_state_dict
+                model = torch.load(model_path, map_location=DEVICE)
+                print(f"Successfully loaded full model from: {model_path.name}")
+            except Exception as e:
+                print(f"Error loading model {model_path}: {str(e)}")
+                model_path = None
+
+    # Если ничего не загрузилось - исключение
+    if not checkpoint_path and not model_path:
+        available_files = [f.name for f in exp_results_dir.iterdir() if f.is_file()]
+        raise FileNotFoundError(
+            f"No valid checkpoint or model found in {exp_results_dir}\n"
+            f"Available files: {available_files or 'None'}"
+        )
 
 
     # 7. ======================= Creating Trainer and start train =============================
