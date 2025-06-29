@@ -67,8 +67,7 @@ class Trainer:
 
         # Save paths
         self.exp_results_dir = exp_results_dir
-        self.checkpoint_path = exp_results_dir / "best_model.pth"
-        self.log_path = exp_results_dir/ "training_log.json"
+        self.log_path = exp_results_dir/ "training_report.json"
 
         self.log_dict: Dict[str, Any] = {
             "train_loss": [],
@@ -78,6 +77,7 @@ class Trainer:
         }
         self.best_val_loss = float("inf")
         self._load_log()
+        self._current_epoch: int | None = None
 
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
@@ -109,6 +109,7 @@ class Trainer:
     
     def train(self) -> torch.nn.Module:
         for epoch in range(1, self.epochs + 1):
+            self._current_epoch = epoch
             train_loss = self.train_epoch(epoch)
 
             # ========================== VALIDATION REPORT ==============================
@@ -124,14 +125,17 @@ class Trainer:
             print(
                 f"Macro Avg: P={val_report['macro avg']['precision']:.4f} "
                 f"R={val_report['macro avg']['recall']:.4f} "
-                f"F1={val_report['macro avg']['f1-score']:.4f}\n"
+                f"F1={val_report['macro avg']['f1-score']:.4f}"
             )
             
             if val_loss < self.best_val_loss:
                 self.best_val_loss = val_loss
                 self.log_dict["best_val_loss"] = self.best_val_loss
                 self.save_checkpoint(epoch, val_loss, val_accuracy)
-                print(f"Checkpoint saved to {self.checkpoint_path} (Val Loss improved to {val_loss:.4f})")
+                self.save_model()
+                saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
+                print(f"Model saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
+                print(f"Checkpoint saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
             self.save_log()
         
         # =========================== TEST REPORT ==========================
@@ -246,9 +250,24 @@ class Trainer:
         }
         torch.save(save_obj, self.checkpoint_path)
     
+    def save_model(self) -> None:
+        torch.save(self.model, self.model_path)
+    
     def save_log(self) -> None:
         with open(self.log_path, "w") as f:
             json.dump(self.log_dict, f, indent=4)
+    
+    @property
+    def checkpoint_path(self) -> Path:
+        if self._current_epoch is None:
+            return self.exp_results_dir / "best_checkpoint.pth"
+        return self.exp_results_dir / f"best_checkpoint_epoch{self._current_epoch:02d}.pth"
+
+    @property
+    def model_path(self) -> Path:
+        if self._current_epoch is None:
+            return self.exp_results_dir / "best_model.pth"
+        return self.exp_results_dir / f"best_model_epoch{self._current_epoch:02d}.pth"
 
     def _load_log(self) -> None:
         if self.log_path.exists():
