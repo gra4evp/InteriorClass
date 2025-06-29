@@ -83,10 +83,11 @@ class InteriorDataset(Dataset):
         
         for class_dir in tqdm(sorted(dataset_dir.iterdir()), desc="Collecting samples..."):
             if class_dir.is_dir() and class_dir.name in cls.CLASSES:
+                image_paths = sorted(class_dir.iterdir())
                 class_idx = cls.CLASSES.index(class_dir.name)
 
                 class_samples = []
-                for filepath in sorted(class_dir.iterdir()):
+                for filepath in image_paths:
                     if filepath.is_file() and filepath.suffix.lower() in allowed_extensions:
                         class_samples.append((filepath, class_idx))
                 

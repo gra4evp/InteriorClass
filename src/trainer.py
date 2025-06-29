@@ -78,6 +78,7 @@ class Trainer:
         self.best_val_loss = float("inf")
         self._load_log()
         self._current_epoch: int | None = None
+        self._best_ckeckpoint_path: Path | None = None
 
     def train_epoch(self, epoch: int) -> float:
         self.model.train()
@@ -133,12 +134,20 @@ class Trainer:
                 self.log_dict["best_val_loss"] = self.best_val_loss
                 self.save_checkpoint(epoch, val_loss, val_accuracy)
                 self.save_model()
+                self._best_ckeckpoint_path = self.checkpoint_path  # Сохраняем путь к лучшему чекпоинту
                 saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
                 print(f"Model saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
                 print(f"Checkpoint saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
             self.save_log()
         
         # =========================== TEST REPORT ==========================
+        # Перед тестированием подгружаем лучший чекпоинт, если он есть
+        if self._best_ckeckpoint_path is not None and self._best_ckeckpoint_path.exists():
+            checkpoint = torch.load(self._best_ckeckpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            print(f"Loaded best checkpoint from {self._best_ckeckpoint_path}")
+        else:
+            print("Warning: Best checkpoint path is not set or file does not exist. Testing current model state.")
         test_report, conf_matrix_dict = self.test()
 
         print("Final Test Results:")
