@@ -8,6 +8,8 @@ from typing import List
 from PIL import Image
 # from sklearn.metrics import classification_report
 import albumentations as A
+from pydantic import BaseModel
+from src.config import CLASS_LABELS
 
 
 # Убираем только конкретное предупреждение Pillow о палитровых изображениях
@@ -18,13 +20,21 @@ warnings.filterwarnings(
     module="PIL.Image"
 )
 
+class DatasetConfig(BaseModel):
+    pass
+
 
 class InteriorDataset(Dataset):
     """Датасет с поддержкой Albumentations аугментаций (PIL.Image версия)"""
     
     CLASSES = ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"]
     
-    def __init__(self, samples, transform=None, mode='train'):
+    def __init__(
+            self,
+            samples: List[tuple[Path, int]],
+            transform: A.Compose | None = None,
+            class_labels: List[str] | None = None
+        ):
         """
         Args:
             samples: список кортежей (путь_к_изображению, индекс_класса)
@@ -33,7 +43,10 @@ class InteriorDataset(Dataset):
         """
         self.samples = samples
         self.transform = transform
-        self.mode = mode
+        
+        self.class_labels = class_labels
+        if class_labels is None:
+            self.class_labels = CLASS_LABELS
         
     def __len__(self):
         return len(self.samples)
@@ -47,7 +60,7 @@ class InteriorDataset(Dataset):
         # Конвертация в numpy array для Albumentations
         image_np = np.array(image)
         
-        if self.transform:
+        if self.transform is not None:
             augmented = self.transform(image=image_np)
             image_np = augmented['image']
             
@@ -62,38 +75,6 @@ class InteriorDataset(Dataset):
         # Без трансформаций - конвертируем в тензор
         image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float()
         return image_tensor, class_idx
-
-    @classmethod
-    def collect_samples(
-        cls, 
-        dataset_dir: Path, 
-        extensions: tuple[str, ...] = ('.jpg', '.jpeg', '.png')
-    ) -> List[tuple[Path, int]]:
-        """Collect samples with both path and numerical index.
-        
-        Args:
-            dataset_dir: Root directory containing class folders
-            extensions: Allowed file extensions (default: .jpg, .jpeg, .png)
-                
-        Returns:
-            List of (image_path, class_index) tuples
-        """
-        samples = []
-        allowed_extensions = {ext.lower() for ext in extensions}
-        
-        for class_dir in tqdm(sorted(dataset_dir.iterdir()), desc="Collecting samples..."):
-            if class_dir.is_dir() and class_dir.name in cls.CLASSES:
-                image_paths = sorted(class_dir.iterdir())
-                class_idx = cls.CLASSES.index(class_dir.name)
-
-                class_samples = []
-                for filepath in image_paths:
-                    if filepath.is_file() and filepath.suffix.lower() in allowed_extensions:
-                        class_samples.append((filepath, class_idx))
-                
-                samples.extend(class_samples)
-        
-        return samples
 
 
 # def get_transforms(mode='train', img_size=380):

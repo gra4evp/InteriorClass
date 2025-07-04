@@ -1,4 +1,4 @@
-from src.config import RANDOM_SEED, SPLIT_RATIO, MIN_VAL_TEST_PER_CLASS, CLASS_LABELS
+from src.config import RANDOM_SEED, SPLIT_CONFIG, MIN_VAL_TEST_PER_CLASS, CLASS_LABELS
 from pathlib import Path
 import random
 from collections import defaultdict
@@ -8,7 +8,6 @@ from typing import Annotated
 from decimal import Decimal
 
 
-random.seed(RANDOM_SEED)
 
 # Custom type for ratio values between 0 and 1 (inclusive)
 RatioFloat = Annotated[float, Field(gt=0, le=1)]
@@ -18,17 +17,17 @@ class SplitConfig(BaseModel):
     """Configuration for splitting dataset samples for a single class.
     
     Attributes:
-        train: Ratio of samples for training (0 < value ≤ 1)
-        val: Ratio of samples for validation (0 < value ≤ 1)
-        test: Ratio of samples for testing (0 < value ≤ 1)
+        train_ratio: Ratio of samples for training (0 < value ≤ 1)
+        val_ratio: Ratio of samples for validation (0 < value ≤ 1)
+        test_ratio: Ratio of samples for testing (0 < value ≤ 1)
         min_samples: Minimum number of samples guaranteed for validation and testing
     """
-    train: RatioFloat
-    val: RatioFloat
-    test: RatioFloat
+    train_ratio: RatioFloat
+    val_ratio: RatioFloat
+    test_ratio: RatioFloat
     min_samples: int = Field(default=20, ge=1)  # Minimum samples in val/test sets
 
-    @field_validator('train', 'val', 'test', mode='before')
+    @field_validator('train_ratio', 'val_ratio', 'test_ratio', mode='before')
     @classmethod
     def round_values(cls, v: float) -> float:
         """Round float values to 2 decimal places for precision.
@@ -43,7 +42,7 @@ class SplitConfig(BaseModel):
             return float(round(Decimal(str(v)), 2))
         return v
 
-    @field_validator('test')
+    @field_validator('test_ratio')
     @classmethod
     def validate_split(cls, v: float, values) -> float:
         """Validate that the sum of all ratios doesn't exceed 1.
@@ -58,11 +57,16 @@ class SplitConfig(BaseModel):
         Raises:
             ValueError: If sum of train/val/test ratios exceeds 1
         """
-        if 'train' in values.data and 'val' in values.data:
-            total = values.data['train'] + values.data['val'] + v
+        if 'train_ratio' in values.data and 'val_ratio' in values.data:
+            total = values.data['train_ratio'] + values.data['val_ratio'] + v
             if total > 1.01:  # Small tolerance for floating point rounding
                 raise ValueError(f"Sum of train/val/test ratios must not exceed 1. Got: {total}")
         return v
+
+
+class DatasetSplitterConfig(BaseModel):
+    pass
+
 
 
 class DatasetSplitter:
@@ -72,7 +76,7 @@ class DatasetSplitter:
         self,
         class_labels: List[str],
         split_config: Dict[str, Dict[str, float]],
-        random_seed: Optional[int] = None
+        random_seed: int | None = None
     ):
         """
         Args:
@@ -86,35 +90,52 @@ class DatasetSplitter:
         
         if random_seed is not None:
             random.seed(random_seed)
+        
+        self._train_samples_count: int | None = None
+        self._val_samples_count: int | None = None
+        self._test_samples_count: int | None = None
     
-    def split(
+    def __call__(
         self, 
-        samples: List[Tuple[Path, int]],
+        samples: List[Tuple[Path, str]],
         shuffle: bool = True
     ) -> Tuple[List[Tuple[Path, int]], List[Tuple[Path, int]], List[Tuple[Path, int]]]:
         """Основной метод для разделения данных."""
-        class_to_samples = self._group_samples_by_class(samples)
+        label2samples = self._group_samples_by_class(samples)
         
         train, val, test = [], [], []
-        for class_name, class_samples in class_to_samples.items():
-            cfg = self.split_config[class_name]
-            t, v, te = self._split_class_samples(class_samples, cfg, shuffle=shuffle)
+        for label, samples in label2samples.items():
+            config = self.split_config[label]
+            t, v, te = self._split(
+                samples,
+                train_ratio=config.train_ratio,
+                val_ratio=config.val_ratio,
+                test_ratio=config.test_ratio,
+                min_samples=config.min_samples,
+                shuffle=shuffle
+            )
             train.extend(t)
             val.extend(v)
             test.extend(te)
+        
+        self._train_samples_count = len(train)
+        self._val_samples_count = len(val)
+        self._test_samples_count = len(test)
             
         return train, val, test
     
+    def to_config(self) -> DatasetSplitterConfig:
+        pass
+    
     def _group_samples_by_class(
         self, 
-        samples: List[Tuple[Path, int]]
-    ) -> Dict[str, List[Tuple[Path, int]]]:
-        """Группирует выборки по классам."""
-        class_to_samples = defaultdict(list)
-        for img_path, class_idx in samples:
-            class_name = self.class_labels[class_idx]
-            class_to_samples[class_name].append((img_path, class_idx))
-        return class_to_samples
+        samples: List[Tuple[Path, str]]
+    ) -> Dict[str, List[Tuple[Path, str]]]:
+        """Группирует выборку по классам."""
+        label2samples = defaultdict(list)
+        for falepath, label in samples:
+            label2samples[label].append((falepath, label))
+        return label2samples
     
     @staticmethod
     def _validate_config(config: Dict) -> Dict[str, SplitConfig]:
@@ -125,49 +146,29 @@ class DatasetSplitter:
         return validated
 
     @staticmethod
-    def _split_class_samples(
-        samples: List[Tuple[Path, int]], 
-        config: SplitConfig,
+    def _split(
+        samples: list,
+        train_ratio: RatioFloat,
+        val_ratio: RatioFloat,
+        test_ratio: RatioFloat,
+        min_samples: int,
         shuffle: bool = True
-    ) -> Tuple[List, List, List]:
+    ) -> Tuple[list, list, list]:
         """Разделяет выборки одного класса."""
         if shuffle:
             random.shuffle(samples)
         
         n_total = len(samples)
         
-        n_train = int(n_total * config.train)
-        n_val = int(n_total * config.val)
+        n_train = int(n_total * train_ratio)
+        n_val = int(n_total * val_ratio)
         
         # Гарантируем минимальное количество в val/test
-        n_val = max(n_val, config.min_samples)
-        n_test = max(n_total - n_train - n_val, config.min_samples)
+        n_val = max(n_val, min_samples)
+        n_test = max(n_total - n_train - n_val, min_samples)
         
-        train = samples[:n_train]
-        val = samples[n_train : n_train + n_val]
-        test = samples[n_train + n_val : n_train + n_val + n_test]
+        train_set = samples[:n_train]
+        val_set = samples[n_train : n_train + n_val]
+        test_set = samples[n_train + n_val : n_train + n_val + n_test]
         
-        return train, val, test
-
-
-# Пример использования:
-if __name__ == "__main__":
-    # 1. Собираем все пути
-    data_root = Path("./data/interior_dataset")
-    samples = []
-    for class_dir in data_root.iterdir():
-        if class_dir.is_dir():
-            class_name = class_dir.name
-            class_idx = InteriorDataset.CLASSES.index(class_name)
-            for img_path in class_dir.glob("*.jpg"):
-                samples.append((img_path, class_idx))
-
-    # Создание сплиттера
-    splitter = DatasetSplitter(
-        class_labels=["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"],
-        split_config=SPLIT_RATIO,
-        random_seed=RANDOM_SEED
-    )
-
-    # Разделение данных
-    train_samples, val_samples, test_samples = splitter.split(samples)
+        return train_set, val_set, test_set

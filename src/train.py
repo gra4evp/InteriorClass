@@ -11,8 +11,9 @@ import torchvision.transforms as transforms
 from PIL import Image
 
 from src.config import RANDOM_SEED, SPLIT_RATIO, MIN_VAL_TEST_PER_CLASS, CLASS_LABELS
-from src.dataset.splitter import DatasetSplitter
-from src.dataset.interior_dataset import InteriorDataset, get_transforms
+from datasets.utils.collector import DataCollector
+from datasets.utils.splitter import DatasetSplitter
+from src.datasets.interior_dataset import InteriorDataset, get_transforms
 from src.models.interior_classifier_EfficientNet_B3 import InteriorClassifier
 from src.trainer import Trainer
 
@@ -23,8 +24,8 @@ if __name__ == "__main__":
     BATCH_SIZE = 32
     EPOCHS = 10
     LR = 3e-5
-    IMG_SIZE = 380  # Для EfficientNet-B3
-    EXP_NUMBER = 5
+    IMG_SIZE = 448
+    EXP_NUMBER = 10
 
 
     # 2. ================================ Define paths =================================
@@ -34,7 +35,8 @@ if __name__ == "__main__":
 
     dataset_dir = data_dir / "interior_dataset"
 
-    samples = InteriorDataset.collect_samples(dataset_dir=dataset_dir)
+    collector = DataCollector(dataset_dir=dataset_dir, class_labels=CLASS_LABELS)
+    samples = collector()
     print(f"Total samples: {len(samples)}")
 
 
@@ -45,7 +47,7 @@ if __name__ == "__main__":
         random_seed=RANDOM_SEED
     )
 
-    train_samples, val_samples, test_samples = splitter.split(samples, shuffle=True)
+    train_samples, val_samples, test_samples = splitter(samples, shuffle=True)
     print(f"Train samples: {len(train_samples)}")
     print(f"Val samples: {len(val_samples)}")
     print(f"Test samples: {len(test_samples)}")
@@ -146,13 +148,13 @@ if __name__ == "__main__":
                 print(f"Error loading model {model_path}: {str(e)}")
                 model_path = None
 
-    # Если ничего не загрузилось - исключение
-    if not checkpoint_path and not model_path:
-        available_files = [f.name for f in exp_results_dir.iterdir() if f.is_file()]
-        raise FileNotFoundError(
-            f"No valid checkpoint or model found in {exp_results_dir}\n"
-            f"Available files: {available_files or 'None'}"
-        )
+    # # Если ничего не загрузилось - исключение
+    # if not checkpoint_path and not model_path:
+    #     available_files = [f.name for f in exp_results_dir.iterdir() if f.is_file()]
+    #     raise FileNotFoundError(
+    #         f"No valid checkpoint or model found in {exp_results_dir}\n"
+    #         f"Available files: {available_files or 'None'}"
+    #     )
 
 
     # 7. ======================= Creating Trainer and start train =============================

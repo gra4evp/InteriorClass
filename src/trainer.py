@@ -37,6 +37,23 @@ class HyperParametersConfig(BaseModel):
     scheduler: SchedulerConfig | None = None
 
 
+class ModelConfig(BaseModel):
+    name: str  # "InteriorClassifier"
+    params: Dict[str, Any]  # {"num_classes": 10, "pretrained": True}
+
+
+class TrainerConfig(BaseModel):
+    model_config: ModelConfig
+    criterion_config: str  # "CrossEntropyLoss", "MSELoss", etc.
+    optimizer_config: OptimizerConfig
+    scheduler_config: SchedulerConfig | None = None
+    train_loader_config: DataLoaderConfig
+    val_loader_config: DataLoaderConfig
+    test_loader_config: DataLoaderConfig
+    epochs: int
+    device: str
+    exp_results_dir: Path
+
 
 class Trainer:
     def __init__(
@@ -241,13 +258,31 @@ class Trainer:
 
         return report, conf_matrix_dict
 
-    def to_config(self) -> TrainingConfig:
+    def to_config(self) -> TrainerConfig:
         """
         Возвращает текущий конфиг (можно сохранить в JSON).
         """
-    
-    def from_config(self, config: TrainingConfig) -> None:
-        pass
+        return TrainerConfig(
+            model_config=self.model.to_config(),
+            criterion_config=self.criterion.to_config(),
+            optimizer_config=self.optimizer.to_config(),
+            scheduler_config=self.scheduler.to_config(),
+        )
+
+    @classmethod
+    def from_config(cls, config: TrainerConfig) -> "Trainer":
+        return cls(
+            model=config.model_config,
+            criterion=config.criterion_config,
+            optimizer=config.optimizer_config,
+            scheduler=config.scheduler_config,
+            train_loader=config.train_loader,
+            val_loader=config.val_loader,
+            test_loader=config.test_loader,
+            epochs=config.epochs,
+            device=config.device,
+            exp_results_dir=config.exp_results_dir
+        )
 
     def save_checkpoint(self, epoch: int, val_loss: float, val_accuracy: float) -> None:
         save_obj = {
@@ -284,7 +319,7 @@ class Trainer:
                 self.log_dict = json.load(f)
             self.best_val_loss = self.log_dict.get("best_val_loss", float("inf"))
 
-    def _save_confusion_matrix_plot(self, conf_matrix):
+    def _save_confusion_matrix_plot(self, conf_matrix: np.ndarray) -> None:
         plt.figure(figsize=(10, 8))
         df_cm = pd.DataFrame(
             conf_matrix, 
@@ -294,7 +329,7 @@ class Trainer:
         sns.heatmap(df_cm, annot=True, fmt='d', cmap='Blues')
         plt.title('Confusion Matrix')
         plt.xlabel('Predicted')
-        plt.ylabel('True')
+        plt.ylabel('Ground Truth')
         
         plot_path = self.exp_results_dir / "confusion_matrix.png"
         plt.savefig(plot_path, bbox_inches='tight')
