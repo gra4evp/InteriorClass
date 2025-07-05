@@ -10,7 +10,7 @@ from sklearn.metrics import classification_report
 import torchvision.transforms as transforms
 from PIL import Image
 
-from src.config import RANDOM_SEED, SPLIT_RATIO, MIN_VAL_TEST_PER_CLASS, CLASS_LABELS
+from src.config import RANDOM_SEED, SPLIT_CONFIG, MIN_VAL_TEST_PER_CLASS, CLASS_LABELS
 from datasets.utils.collector import DataCollector
 from datasets.utils.splitter import DatasetSplitter
 from src.datasets.interior_dataset import InteriorDataset, get_transforms
@@ -42,8 +42,7 @@ if __name__ == "__main__":
 
     # 3. ============================= Create DatasetSplitter ===========================
     splitter = DatasetSplitter(
-        class_labels=CLASS_LABELS,
-        split_config=SPLIT_RATIO,
+        split_config=SPLIT_CONFIG,
         random_seed=RANDOM_SEED
     )
 
@@ -56,20 +55,17 @@ if __name__ == "__main__":
     # 4. =============================== Create Datasets ==================================
     train_dataset = InteriorDataset(
         train_samples,
-        transform=get_transforms(img_size=IMG_SIZE, mode='train'),
-        mode='train'
+        transform=get_transforms(img_size=IMG_SIZE, mode='train')
     )
 
     val_dataset = InteriorDataset(
         val_samples,
-        transform=get_transforms(img_size=IMG_SIZE, mode='val'),
-        mode='val'
+        transform=get_transforms(img_size=IMG_SIZE, mode='val')
     )
 
     test_dataset = InteriorDataset(
         test_samples,
-        transform=get_transforms(img_size=IMG_SIZE, mode='test'),
-        mode='test'
+        transform=get_transforms(img_size=IMG_SIZE, mode='test')
     )
 
 

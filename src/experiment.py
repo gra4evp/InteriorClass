@@ -21,16 +21,12 @@ class PathsConfig(BaseModel):
     project_root: str = "."
     dataset_dir: str
 
+
 class ExperimentConfig(BaseModel):
     exp_number: int
     random_seed: int
     trainer_config: TrainerConfig
     paths: PathsConfig
-
-
-
-
-
 
 
 class Experiment:

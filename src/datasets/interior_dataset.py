@@ -1,3 +1,4 @@
+# src/datasets/interior_dataset.py
 from pathlib import Path
 import warnings
 from torch.utils.data import Dataset
@@ -10,6 +11,7 @@ from PIL import Image
 import albumentations as A
 from pydantic import BaseModel
 from src.config import CLASS_LABELS
+from src.schemas import SampleItem
 
 
 # Убираем только конкретное предупреждение Pillow о палитровых изображениях
@@ -20,98 +22,66 @@ warnings.filterwarnings(
     module="PIL.Image"
 )
 
-class DatasetConfig(BaseModel):
+
+class TransformConfig(BaseModel):
     pass
 
 
+class DatasetConfig(BaseModel):
+    transform_config: TransformConfig
+
+
 class InteriorDataset(Dataset):
-    """Датасет с поддержкой Albumentations аугментаций (PIL.Image версия)"""
-    
-    CLASSES = ["A0", "A1", "B0", "B1", "C0", "C1", "D0", "D1"]
+    """
+    Датасет с поддержкой Albumentations аугментаций (PIL.Image версия)
+    """
     
     def __init__(
             self,
-            samples: List[tuple[Path, int]],
-            transform: A.Compose | None = None,
-            class_labels: List[str] | None = None
+            sample_items: List[SampleItem],
+            transform: A.Compose | None = None
         ):
         """
         Args:
             samples: список кортежей (путь_к_изображению, индекс_класса)
             transform: albumentations трансформации
-            mode: режим работы ('train'/'val'/'test')
         """
-        self.samples = samples
+        self.sample_items = sample_items
         self.transform = transform
         
-        self.class_labels = class_labels
-        if class_labels is None:
-            self.class_labels = CLASS_LABELS
-        
     def __len__(self):
-        return len(self.samples)
+        return len(self.sample_items)
     
-    def __getitem__(self, idx):
-        img_path, class_idx = self.samples[idx]
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, str, int]:
+        s_item = self.sample_items[idx]
         
         # Загрузка через PIL
-        image = Image.open(img_path).convert('RGB')
+        image_pil = Image.open(s_item.filepath).convert('RGB')
         
         # Конвертация в numpy array для Albumentations
-        image_np = np.array(image)
+        image_np = np.array(image_pil)
         
         if self.transform is not None:
             augmented = self.transform(image=image_np)
-            image_np = augmented['image']
+            image = augmented['image']
             
-            # Если трансформации включают ToTensorV2, то image_np уже будет тензором
-            if isinstance(image_np, torch.Tensor):
-                return image_np, class_idx
+            # Если трансформации включают ToTensorV2, то image уже будет тензором
+            if isinstance(image, torch.Tensor):
+                return image, s_item.label, s_item.class_idx
             
             # Иначе конвертируем в тензор вручную
-            image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float()
-            return image_tensor, class_idx
+            image_tensor = torch.from_numpy(image).permute(2, 0, 1).float()
+            return image_tensor, s_item.label, s_item.class_idx
             
         # Без трансформаций - конвертируем в тензор
         image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float()
-        return image_tensor, class_idx
+        return image_tensor, s_item.label, s_item.class_idx
 
+    def to_config() -> DatasetConfig:
+        pass
 
-# def get_transforms(mode='train', img_size=380):
-#     """Аугментации для разных этапов"""
-#     if mode == 'train':
-#         return A.Compose([
-#             A.Resize(img_size, img_size),
-#             A.HorizontalFlip(p=0.5),
-#             A.Affine(
-#                 translate_percent=0.1,  # аналог shift_limit
-#                 scale=(0.85, 1.15),     # аналог scale_limit
-#                 rotate=(-30, 30),       # аналог rotate_limit
-#                 p=0.5
-#             ),
-#             A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.5),
-#             A.CoarseDropout(
-#                 num_holes_range=(3, 6),     # Диапазон количества "дыр" (бывший max_holes)
-#                 hole_height_range=(16, 32),  # Диапазон высоты (бывший max_height)
-#                 hole_width_range=(16, 32),   # Диапазон ширины (бывший max_width)
-#                 fill=0,                # Значение для заливки (0 для чёрного)
-#                 p=0.3
-#             ),
-#             A.Normalize(
-#                 mean=[0.485, 0.456, 0.406],
-#                 std=[0.229, 0.224, 0.225]
-#             ),
-#             A.ToTensorV2()
-#         ])
-#     else:  # val/test
-#         return A.Compose([
-#             A.Resize(img_size, img_size),
-#             A.Normalize(
-#                 mean=[0.485, 0.456, 0.406],
-#                 std=[0.229, 0.224, 0.225]
-#             ),
-#             A.ToTensorV2()
-#         ])
+    def from_config(config: DatasetConfig):
+        pass
 
 
 def get_transforms(mode='train', img_size=380):

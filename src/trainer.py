@@ -84,7 +84,7 @@ class Trainer:
 
         # Save paths
         self.exp_results_dir = exp_results_dir
-        self.log_path = exp_results_dir/ "training_report.json"
+        self.log_path = exp_results_dir / "training_report.json"
 
         self.log_dict: Dict[str, Any] = {
             "train_loss": [],
