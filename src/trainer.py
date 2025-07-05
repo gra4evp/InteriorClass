@@ -37,11 +37,6 @@ class HyperParametersConfig(BaseModel):
     scheduler: SchedulerConfig | None = None
 
 
-class ModelConfig(BaseModel):
-    name: str  # "InteriorClassifier"
-    params: Dict[str, Any]  # {"num_classes": 10, "pretrained": True}
-
-
 class TrainerConfig(BaseModel):
     model_config: ModelConfig
     criterion_config: str  # "CrossEntropyLoss", "MSELoss", etc.

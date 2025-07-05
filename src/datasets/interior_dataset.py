@@ -3,15 +3,10 @@ from pathlib import Path
 import warnings
 from torch.utils.data import Dataset
 import numpy as np
-from tqdm import tqdm
 import torch
-from typing import List
 from PIL import Image
-# from sklearn.metrics import classification_report
 import albumentations as A
-from pydantic import BaseModel
-from src.config import CLASS_LABELS
-from src.schemas import SampleItem
+from src.schemas import SampleItem, DatasetConfig
 
 
 # Убираем только конкретное предупреждение Pillow о палитровых изображениях
@@ -23,14 +18,6 @@ warnings.filterwarnings(
 )
 
 
-class TransformConfig(BaseModel):
-    pass
-
-
-class DatasetConfig(BaseModel):
-    transform_config: TransformConfig
-
-
 class InteriorDataset(Dataset):
     """
     Датасет с поддержкой Albumentations аугментаций (PIL.Image версия)
@@ -38,21 +25,30 @@ class InteriorDataset(Dataset):
     
     def __init__(
             self,
-            sample_items: List[SampleItem],
-            transform: A.Compose | None = None
+            transforms: A.Compose | None = None,
+            transforms_filepath: Path | None = None
         ):
         """
         Args:
             samples: список кортежей (путь_к_изображению, индекс_класса)
             transform: albumentations трансформации
         """
+        self.transforms = transforms
+        self.transforms_filepath = transforms_filepath
+        self.sample_items: list[SampleItem] | None = None
+    
+    def prepare(self, sample_items: list[SampleItem]):
         self.sample_items = sample_items
-        self.transform = transform
         
     def __len__(self):
+        if self.sample_items is None:
+            return 0
         return len(self.sample_items)
     
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, str, int]:
+        if self.sample_items is None:
+            raise RuntimeError("Dataset not prepared!")
+        
         s_item = self.sample_items[idx]
         
         # Загрузка через PIL
@@ -61,8 +57,8 @@ class InteriorDataset(Dataset):
         # Конвертация в numpy array для Albumentations
         image_np = np.array(image_pil)
         
-        if self.transform is not None:
-            augmented = self.transform(image=image_np)
+        if self.transforms is not None:
+            augmented = self.transforms(image=image_np)
             image = augmented['image']
             
             # Если трансформации включают ToTensorV2, то image уже будет тензором
@@ -77,14 +73,24 @@ class InteriorDataset(Dataset):
         image_tensor = torch.from_numpy(image_np).permute(2, 0, 1).float()
         return image_tensor, s_item.label, s_item.class_idx
 
-    def to_config() -> DatasetConfig:
-        pass
+    def to_config(self) -> DatasetConfig:
+        if not self.transforms.is_serializable():
+            raise ValueError
+        
+        if self.transforms_filepath is not None:
+            A.save(self.transforms, self.transforms_filepath)
+        
+        return DatasetConfig(transform_filepath=self.transforms_filepath)
+    
+    @classmethod
+    def from_config(cls, config: DatasetConfig) -> 'InteriorDataset':
+        transform = None
+        if config.transforms_filepath is not None:
+            transform = A.load(config.transforms_filepath)
+        return cls(transform=transform, transforms_filepath=config.transforms_filepath)
 
-    def from_config(config: DatasetConfig):
-        pass
 
-
-def get_transforms(mode='train', img_size=380):
+def get_transforms(mode='train', img_size=380) -> A.Compose:
     if mode == 'train':
         return A.Compose([
             # Обязательные для всех изображений

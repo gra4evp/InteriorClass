@@ -1,6 +1,6 @@
 # src/shemas/configs.py
 from pathlib import Path
-from typing import List, TypeAlias, Annotated
+from typing import List, Literal
 from decimal import Decimal
 from src.schemas.types import RatioFloat
 
@@ -72,3 +72,19 @@ class DatasetSplitterConfig(BaseModel):
     val_samples_count: int | None = None
     test_samples_count: int | None = None
 
+
+class DatasetConfig(BaseModel):
+    transforms_filepath: Path | None
+
+
+class HeadConfig(BaseModel):
+    hidden_dim: int = Field(512, description="Размер скрытого слоя head")
+    dropout: float = Field(0.3, description="Dropout в head")
+    activation: Literal['relu', 'gelu'] = Field('relu', description="Активация в head")
+
+
+class ModelConfig(BaseModel):
+    backbone_name: str = Field('efficientnet_b3', description="Название backbone модели")
+    num_classes: int = Field(8, description="Количество классов")
+    pretrained: bool = Field(True, description="Использовать ли pretrain")
+    head: HeadConfig | None = None
