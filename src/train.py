@@ -6,7 +6,6 @@ from tqdm import tqdm
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report
 import torchvision.transforms as transforms
 from PIL import Image
 
@@ -14,7 +13,7 @@ from src.config import RANDOM_SEED, SPLIT_CONFIG, MIN_VAL_TEST_PER_CLASS, CLASS_
 from datasets.utils.collector import DataCollector
 from datasets.utils.splitter import DatasetSplitter
 from src.datasets.interior_dataset import InteriorDataset, get_transforms
-from src.models.interior_classifier_EfficientNet_B3 import InteriorClassifier
+from models.interior_classifier_EfficientNet import InteriorClassifier
 from src.trainer import Trainer
 
 
@@ -52,7 +51,7 @@ if __name__ == "__main__":
     print(f"Test samples: {len(test_samples)}")
 
 
-    # 4. =============================== Create Datasets ==================================
+    # 4. ============================= Create Datasets =============================
     train_dataset = InteriorDataset(
         train_samples,
         transform=get_transforms(img_size=IMG_SIZE, mode='train')
@@ -69,7 +68,7 @@ if __name__ == "__main__":
     )
 
 
-    # 5. ============================= Create DataLoaders ==================================
+    # 5. ============================= Create DataLoaders =============================
     train_loader = DataLoader(
         dataset=train_dataset,
         batch_size=BATCH_SIZE,
@@ -96,7 +95,7 @@ if __name__ == "__main__":
     )
 
 
-    # 6. =============================== Initializing model ===================================
+    # 6. ============================= Initializing model =============================
     model = InteriorClassifier(num_classes=len(CLASS_LABELS)).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LR)
@@ -153,7 +152,7 @@ if __name__ == "__main__":
     #     )
 
 
-    # 7. ======================= Creating Trainer and start train =============================
+    # 7. ============================= Creating Trainer and start train =============================
     trainer = Trainer(
         model=model,
         criterion=criterion,

@@ -1,6 +1,6 @@
 # src/shemas/configs.py
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Any
 from decimal import Decimal
 from src.schemas.types import RatioFloat
 
@@ -77,6 +77,13 @@ class DatasetConfig(BaseModel):
     transforms_filepath: Path | None
 
 
+class DataLoaderConfig(BaseModel):
+    batch_size: int
+    shuffle: bool
+    num_workers: int
+    pin_memory: bool
+
+
 class HeadConfig(BaseModel):
     hidden_dim: int = Field(512, description="Размер скрытого слоя head")
     dropout: float = Field(0.3, description="Dropout в head")
@@ -88,3 +95,54 @@ class ModelConfig(BaseModel):
     num_classes: int = Field(8, description="Количество классов")
     pretrained: bool = Field(True, description="Использовать ли pretrain")
     head: HeadConfig | None = None
+
+
+class CriterionConfig(BaseModel):
+    name: str
+    params: dict[str, Any]
+
+
+class OptimizerConfig(BaseModel):
+    name: str  # "Adam", "SGD", etc.
+    params: dict[str, Any]  # {"lr": 0.001, "weight_decay": 0.01}
+
+
+class SchedulerConfig(BaseModel):
+    name: str  # "StepLR", "CosineAnnealingLR", etc.
+    params: dict[str, Any]  # {"step_size": 30, "gamma": 0.1}
+
+
+class HyperParametersConfig(BaseModel):
+    batch_size: int
+    epochs: int
+    img_size: int
+    random_seed: int
+    device: str
+    criterion: str  # "CrossEntropyLoss", "MSELoss", etc.
+    optimizer: OptimizerConfig
+    scheduler: SchedulerConfig | None = None
+
+
+class TrainerConfig(BaseModel):
+    model_config: ModelConfig
+    criterion_config: CriterionConfig
+    optimizer_config: OptimizerConfig
+    scheduler_config: SchedulerConfig | None = None
+    train_loader_config: DataLoaderConfig
+    val_loader_config: DataLoaderConfig
+    test_loader_config: DataLoaderConfig
+    epochs: int
+    device: str
+    exp_results_dir: Path
+
+
+class ExperimentConfig(BaseModel):
+    exp_results_dir: Path
+    class_labels: list[str]
+    split_config: dict[str, dict[str, int | float]]
+    exp_number: int
+    epochs: int
+    img_size: int
+    start_lr: float
+    random_seed: int
+    trainer_config: TrainerConfig

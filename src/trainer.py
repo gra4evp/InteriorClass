@@ -13,41 +13,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
 from src.config import TrainingConfig, CLASS_LABELS
-from pydantic import BaseModel
-
-
-class OptimizerConfig(BaseModel):
-    name: str  # "Adam", "SGD", etc.
-    params: Dict[str, Any]  # {"lr": 0.001, "weight_decay": 0.01}
-
-
-class SchedulerConfig(BaseModel):
-    name: str  # "StepLR", "CosineAnnealingLR", etc.
-    params: Dict[str, Any]  # {"step_size": 30, "gamma": 0.1}
-
-
-class HyperParametersConfig(BaseModel):
-    batch_size: int
-    epochs: int
-    img_size: int
-    random_seed: int
-    device: str
-    criterion: str  # "CrossEntropyLoss", "MSELoss", etc.
-    optimizer: OptimizerConfig
-    scheduler: SchedulerConfig | None = None
-
-
-class TrainerConfig(BaseModel):
-    model_config: ModelConfig
-    criterion_config: str  # "CrossEntropyLoss", "MSELoss", etc.
-    optimizer_config: OptimizerConfig
-    scheduler_config: SchedulerConfig | None = None
-    train_loader_config: DataLoaderConfig
-    val_loader_config: DataLoaderConfig
-    test_loader_config: DataLoaderConfig
-    epochs: int
-    device: str
-    exp_results_dir: Path
+from src.schemas.configs import TrainerConfig, CriterionConfig, OptimizerConfig, SchedulerConfig, DataLoaderConfig
 
 
 class Trainer:
@@ -257,11 +223,50 @@ class Trainer:
         """
         Возвращает текущий конфиг (можно сохранить в JSON).
         """
+        criterion_config = CriterionConfig(
+            name=self.criterion.__class__.__name__,
+            params=self.criterion.state_dict()
+        )
+
+        optimizer_config = OptimizerConfig(
+            name=self.optimizer.__class__.__name__,
+            params=self.optimizer.state_dict()
+        )
+
+        scheduler_config = SchedulerConfig(
+            name=self.scheduler.__class__.__name__,
+            params=self.scheduler.state_dict()
+        )
+
+        train_loader_config = DataLoaderConfig(
+            batch_size=self.train_loader.batch_size,
+            shuffle=True,
+            num_workers=self.train_loader.num_workers,
+            pin_memory=self.train_loader.pin_memory
+        )
+
+        val_loader_config = DataLoaderConfig(
+            batch_size=self.val_loader.batch_size,
+            shuffle=False,
+            num_workers=self.val_loader.num_workers,
+            pin_memory=self.val_loader.pin_memory
+        )
+
+        test_loader_config = DataLoaderConfig(
+            batch_size=self.test_loader.batch_size,
+            shuffle=False,
+            num_workers=self.test_loader.num_workers,
+            pin_memory=self.test_loader.pin_memory
+        )
+
         return TrainerConfig(
             model_config=self.model.to_config(),
-            criterion_config=self.criterion.to_config(),
-            optimizer_config=self.optimizer.to_config(),
-            scheduler_config=self.scheduler.to_config(),
+            criterion_config=criterion_config,
+            optimizer_config=optimizer_config,
+            scheduler_config=scheduler_config,
+            train_loader_config=train_loader_config,
+            val_loader_config=val_loader_config,
+            test_loader_config=test_loader_config
         )
 
     @classmethod
