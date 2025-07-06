@@ -41,9 +41,9 @@ class InteriorClassifier(nn.Module):
             # Полноценная голова
             activation = nn.Identity()
             if head_activation == 'relu':
-                activation = nn.ReLU
+                activation = nn.ReLU()
             elif head_activation == 'gelu':
-                activation == nn.GELU()
+                activation = nn.GELU()
             
             self.head = nn.Sequential(
                 nn.Linear(self.feature_dim, head_hidden_dim),
