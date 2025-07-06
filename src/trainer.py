@@ -1,6 +1,6 @@
 # src/trainer.py
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 import json
 from tqdm import tqdm
 
@@ -43,7 +43,7 @@ class Trainer:
         self.exp_results_dir = exp_results_dir
         self.log_path = exp_results_dir / "training_report.json"
 
-        self.log_dict: Dict[str, Any] = {
+        self.log_dict: dict[str, Any] = {
             "train_loss": [],
             "val_loss": [],
             "val_accuracy": [],
@@ -141,7 +141,7 @@ class Trainer:
 
         return self.model
 
-    def validate(self, epoch: int) -> Tuple[float, Dict[str, Any]]:
+    def validate(self, epoch: int) -> tuple[float, dict[str, Any]]:
         self.model.eval()
 
         val_loss = 0.0
@@ -179,7 +179,7 @@ class Trainer:
 
         return val_loss, report
 
-    def test(self) -> Tuple[float, Dict[str, Any]]:
+    def test(self) -> tuple[float, dict[str, Any]]:
         self.model.eval()
 
         all_idxs: list[int] = []
