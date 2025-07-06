@@ -1,5 +1,6 @@
 # src/datasets/interior_dataset.py
 from pathlib import Path
+import json
 import warnings
 from torch.utils.data import Dataset
 import numpy as np
@@ -79,15 +80,21 @@ class InteriorDataset(Dataset):
         
         if self.transforms_filepath is not None:
             A.save(self.transforms, self.transforms_filepath)
+
+            # Перезаписываем с нормальными отступами
+            with self.transforms_filepath.open('r') as f:
+                data = json.load(f)
+            with self.transforms_filepath.open('w') as f:
+                json.dump(data, f, indent=4)
         
-        return DatasetConfig(transform_filepath=self.transforms_filepath)
+        return DatasetConfig(transforms_filepath=self.transforms_filepath)
     
     @classmethod
     def from_config(cls, config: DatasetConfig) -> 'InteriorDataset':
-        transform = None
+        transforms = None
         if config.transforms_filepath is not None:
-            transform = A.load(config.transforms_filepath)
-        return cls(transform=transform, transforms_filepath=config.transforms_filepath)
+            transforms = A.load(config.transforms_filepath)
+        return cls(transforms=transforms, transforms_filepath=config.transforms_filepath)
 
 
 def get_transforms(mode='train', img_size=380) -> A.Compose:

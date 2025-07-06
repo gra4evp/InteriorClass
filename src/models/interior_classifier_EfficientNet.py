@@ -1,7 +1,7 @@
 from typing import Literal
 from torch import nn
 import timm
-from src.schemas import HeadConfig, ModelConfig
+from src.schemas import HeadConfig, NNModelConfig
 
 
 class InteriorClassifier(nn.Module):
@@ -59,7 +59,7 @@ class InteriorClassifier(nn.Module):
         features = self.backbone(x)
         return self.head(features)
 
-    def to_config(self) -> ModelConfig:
+    def to_config(self) -> NNModelConfig:
         head = None
         if self.use_head:
             head = HeadConfig(
@@ -67,7 +67,7 @@ class InteriorClassifier(nn.Module):
                 dropout=self.head_dropout,
                 activation=self.head_activation
             )
-        return ModelConfig(
+        return NNModelConfig(
             backbone_name=self.backbone_name,
             num_classes=self.num_classes,
             pretrained=self.pretrained,
@@ -75,7 +75,7 @@ class InteriorClassifier(nn.Module):
         )
 
     @classmethod
-    def from_config(cls, config: ModelConfig) -> 'InteriorClassifier':
+    def from_config(cls, config: NNModelConfig) -> 'InteriorClassifier':
         head = config.head
         if head is not None:
             return cls(

@@ -69,5 +69,5 @@ class SampleCollector:
     def from_config(cls, config: SampleCollectorConfig):
         kwargs = config.model_dump()
         # Deleting the service fields that are needed when saving
-        _ = kwargs.pop('samples_count', default=None)
+        _ = kwargs.pop('samples_count', None)
         return cls(**kwargs)

@@ -6,7 +6,7 @@ from .configs import (
     DataLoaderConfig,
 
     HeadConfig,
-    ModelConfig,
+    NNModelConfig,
     CriterionConfig,
     OptimizerConfig,
     SchedulerConfig,
@@ -26,7 +26,7 @@ __all__ = [
     'DataLoaderConfig',
 
     'HeadConfig',
-    'ModelConfig',
+    'NNModelConfig',
     'CriterionConfig',
     'OptimizerConfig',
     'SchedulerConfig',

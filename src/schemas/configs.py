@@ -90,7 +90,7 @@ class HeadConfig(BaseModel):
     activation: Literal['relu', 'gelu'] = Field('relu', description="Активация в head")
 
 
-class ModelConfig(BaseModel):
+class NNModelConfig(BaseModel):
     backbone_name: str = Field('efficientnet_b3', description="Название backbone модели")
     num_classes: int = Field(8, description="Количество классов")
     pretrained: bool = Field(True, description="Использовать ли pretrain")
@@ -124,7 +124,7 @@ class SchedulerConfig(BaseModel):
 
 
 class TrainerConfig(BaseModel):
-    model_config: ModelConfig
+    nn_model_config: NNModelConfig
     criterion_config: CriterionConfig
     optimizer_config: OptimizerConfig
     scheduler_config: SchedulerConfig | None
@@ -137,6 +137,7 @@ class TrainerConfig(BaseModel):
 
 
 class ExperimentConfig(BaseModel):
+    dataset_dir: Path
     exp_dir: Path
     exp_number: int
     epochs: int

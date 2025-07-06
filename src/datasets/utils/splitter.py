@@ -25,10 +25,10 @@ class DatasetSplitter:
         if random_seed is not None:
             random.seed(random_seed)
         
-        self._config = self.to_config()
         self._train_samples_count: int | None = None
         self._val_samples_count: int | None = None
         self._test_samples_count: int | None = None
+        self._config = self.to_config()
     
     def __call__(self, sample_items: list[SampleItem], shuffle: bool = True) -> DatasetSplit:
         """Основной метод для разделения данных."""
@@ -69,9 +69,9 @@ class DatasetSplitter:
     def from_config(cls, config: DatasetSplitterConfig):
         kwargs = config.model_dump()
         # Deleting the service fields that are needed when saving
-        _ = kwargs.pop('train_samples_count', default=None)
-        _ = kwargs.pop('val_samples_count', default=None)
-        _ = kwargs.pop('test_samples_count', default=None)
+        _ = kwargs.pop('train_samples_count', None)
+        _ = kwargs.pop('val_samples_count', None)
+        _ = kwargs.pop('test_samples_count', None)
         return cls(**kwargs)
     
     def _group_samples_by_class(self, samples: List[SampleItem]) -> dict[str, List[SampleItem]]:

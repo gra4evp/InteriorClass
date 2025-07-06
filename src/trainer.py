@@ -9,10 +9,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-
-from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
-from src.config import TrainingConfig, CLASS_LABELS
+from src.config import CLASS_LABELS
 from src.schemas.configs import TrainerConfig, CriterionConfig, OptimizerConfig, SchedulerConfig, DataLoaderConfig
 from src.models.interior_classifier_EfficientNet import InteriorClassifier
 
@@ -20,10 +18,10 @@ from src.models.interior_classifier_EfficientNet import InteriorClassifier
 class Trainer:
     def __init__(
             self,
-            model: torch.nn.Module,
+            model: InteriorClassifier,
             criterion: torch.nn.CrossEntropyLoss,
             optimizer: torch.optim.Optimizer,
-            sheduler: torch.optim.lr_scheduler.LRScheduler,
+            scheduler: torch.optim.lr_scheduler.LRScheduler,
             epochs: int,
             device: str,
             exp_results_dir: Path
@@ -32,7 +30,7 @@ class Trainer:
         self.model = model
         self.criterion = criterion
         self.optimizer = optimizer
-        self.scheduler = sheduler
+        self.scheduler = scheduler
 
         self.epochs = epochs
         self.device = device
@@ -65,11 +63,11 @@ class Trainer:
             postfix={'loss': '?', 'lr': self.optimizer.param_groups[0]['lr']},
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
-        for inputs, labels in train_bar:
-            inputs, labels = inputs.to(self.device), labels.to(self.device)
+        for inputs, _, class_idxs in train_bar:  # get batch [inputs, labels, class_idxs]
+            inputs, class_idxs = inputs.to(self.device), class_idxs.to(self.device)
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
-            loss = self.criterion(outputs, labels)
+            loss = self.criterion(outputs, class_idxs)
             loss.backward()
             self.optimizer.step()
 
@@ -147,8 +145,8 @@ class Trainer:
         self.model.eval()
 
         val_loss = 0.0
-        all_labels: List[int] = []
-        all_preds: List[int] = []
+        all_idxs: list[int] = []
+        all_preds: list[int] = []
         
         val_bar = tqdm(
             self.val_loader,
@@ -156,14 +154,14 @@ class Trainer:
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
         with torch.no_grad():
-            for inputs, labels in val_bar:
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
+            for inputs, _, class_idxs in val_bar:  # get batch [inputs, labels, class_idxs]
+                inputs, class_idxs = inputs.to(self.device), class_idxs.to(self.device)
                 outputs = self.model(inputs)
-                loss = self.criterion(outputs, labels)
+                loss = self.criterion(outputs, class_idxs)
                 val_loss += loss.item() * inputs.size(0)
                 _, preds = torch.max(outputs, 1)
 
-                all_labels.extend(labels.cpu().numpy())
+                all_idxs.extend(class_idxs.cpu().numpy())
                 all_preds.extend(preds.cpu().numpy())
                 
                 val_bar.set_postfix({'val_loss': f'{loss.item():.4f}'})
@@ -171,7 +169,7 @@ class Trainer:
         val_loss = round(val_loss / len(self.val_loader.dataset), 4)
 
         report = classification_report(
-            all_labels,
+            all_idxs,
             all_preds,
             target_names=CLASS_LABELS,
             zero_division=0,
@@ -183,23 +181,28 @@ class Trainer:
 
     def test(self) -> Tuple[float, Dict[str, Any]]:
         self.model.eval()
-        test_preds: List[int] = []
-        test_labels: List[int] = []
+
+        all_idxs: list[int] = []
+        all_preds: list[int] = []
+
         test_bar = tqdm(
             self.test_loader,
             desc='Final Testing',
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
+
         with torch.no_grad():
-            for inputs, labels in test_bar:
+            for inputs, _, class_idxs in test_bar:  # get batch [inputs, labels, class_idxs]
                 inputs = inputs.to(self.device)
                 outputs = self.model(inputs)
                 _, preds = torch.max(outputs, 1)
-                test_preds.extend(preds.cpu().numpy())
-                test_labels.extend(labels.cpu().numpy())
+
+                all_idxs.extend(class_idxs.cpu().numpy())
+                all_preds.extend(preds.cpu().numpy())
 
         report = classification_report(
-            test_labels, test_preds,
+            all_idxs,
+            all_preds,
             target_names=CLASS_LABELS,
             zero_division=0,
             digits=4,
@@ -207,7 +210,7 @@ class Trainer:
         )
 
         # Generate confusion matrix
-        conf_matrix = confusion_matrix(test_labels, test_preds)
+        conf_matrix = confusion_matrix(all_idxs, all_preds)
         
         # Convert to dictionary for JSON serialization
         conf_matrix_dict = {
@@ -226,17 +229,17 @@ class Trainer:
         """
         criterion_config = CriterionConfig(
             name=self.criterion.__class__.__name__,
-            params=self.criterion.state_dict()
+            params=self._get_criterion_params()
         )
 
         optimizer_config = OptimizerConfig(
             name=self.optimizer.__class__.__name__,
-            params=self.optimizer.state_dict()
+            params=self._get_optimizer_params()
         )
 
         scheduler_config = SchedulerConfig(
             name=self.scheduler.__class__.__name__,
-            params=self.scheduler.state_dict()
+            params=self._get_scheduler_params()
         )
 
         train_loader_config = None
@@ -267,7 +270,7 @@ class Trainer:
             )
 
         return TrainerConfig(
-            model_config=self.model.to_config(),
+            nn_model_config=self.model.to_config(),
             criterion_config=criterion_config,
             optimizer_config=optimizer_config,
             scheduler_config=scheduler_config,
@@ -291,7 +294,7 @@ class Trainer:
             Trainer с созданными объектами из конфига
         """
         # Создаем модель из конфига
-        model = InteriorClassifier.from_config(config.model_config)
+        model = InteriorClassifier.from_config(config.nn_model_config)
         
         # Создаем criterion из конфига
         criterion_class = getattr(torch.nn, config.criterion_config.name)
@@ -303,45 +306,18 @@ class Trainer:
         
         # Создаем scheduler из конфига (если есть)
         scheduler_class = getattr(torch.optim.lr_scheduler, config.scheduler_config.name)
+        
+        # Устанавливаем initial_lr для всех param_groups перед созданием scheduler
+        for param_group in optimizer.param_groups:
+            param_group['initial_lr'] = param_group['lr']
+        
         scheduler = scheduler_class(optimizer, **config.scheduler_config.params)
-        
-        # # Создаем DataLoader'ы из конфигов и dataset'ов
-        # train_loader = None
-        # val_loader = None
-        # test_loader = None
-        
-        # if train_dataset is not None:
-        #     train_loader = DataLoader(
-        #         train_dataset,
-        #         batch_size=config.train_loader_config.batch_size,
-        #         shuffle=config.train_loader_config.shuffle,
-        #         num_workers=config.train_loader_config.num_workers,
-        #         pin_memory=config.train_loader_config.pin_memory
-        #     )
-        
-        # if val_dataset is not None:
-        #     val_loader = DataLoader(
-        #         val_dataset,
-        #         batch_size=config.val_loader_config.batch_size,
-        #         shuffle=config.val_loader_config.shuffle,
-        #         num_workers=config.val_loader_config.num_workers,
-        #         pin_memory=config.val_loader_config.pin_memory
-        #     )
-        
-        # if test_dataset is not None:
-        #     test_loader = DataLoader(
-        #         test_dataset,
-        #         batch_size=config.test_loader_config.batch_size,
-        #         shuffle=config.test_loader_config.shuffle,
-        #         num_workers=config.test_loader_config.num_workers,
-        #         pin_memory=config.test_loader_config.pin_memory
-        #     )
         
         return cls(
             model=model,
             criterion=criterion,
             optimizer=optimizer,
-            sheduler=scheduler,
+            scheduler=scheduler,
             epochs=config.epochs,
             device=config.device,
             exp_results_dir=config.exp_results_dir
@@ -432,3 +408,47 @@ class Trainer:
         plot_norm_path = self.exp_results_dir / "confusion_matrix_normalized.png"
         plt.savefig(plot_norm_path, bbox_inches='tight')
         plt.close()
+    
+    def _get_criterion_params(self):
+        """
+        Возвращает только гиперпараметры для конструктора функции потерь (фильтрует только допустимые ключи).
+        """
+        import inspect
+        criterion_class = self.criterion.__class__
+        sig = inspect.signature(criterion_class.__init__)
+        valid_keys = set(sig.parameters.keys()) - {"self"}
+
+        params = {}
+        for key, value in self.criterion.__dict__.items():
+            if key in valid_keys:
+                params[key] = value
+        return params
+    
+    def _get_optimizer_params(self):
+        """
+        Возвращает только гиперпараметры первой param_group оптимайзера,
+        пригодные для передачи в конструктор (фильтрует только допустимые ключи).
+        """
+        import inspect
+        skip_keys = {"params"}
+        group = self.optimizer.param_groups[0]
+        optimizer_class = self.optimizer.__class__
+        sig = inspect.signature(optimizer_class.__init__)
+        valid_keys = set(sig.parameters.keys()) - {"self", "params"}
+        hyperparams = {k: v for k, v in group.items() if k in valid_keys and k not in skip_keys}
+        return hyperparams
+
+    def _get_scheduler_params(self):
+        """
+        Возвращает только гиперпараметры для конструктора lr-scheduler (фильтрует только допустимые ключи).
+        """
+        import inspect
+        scheduler_class = self.scheduler.__class__
+        sig = inspect.signature(scheduler_class.__init__)
+        valid_keys = set(sig.parameters.keys()) - {"self", "optimizer"}
+
+        params = {}
+        for key, value in self.scheduler.__dict__.items():
+            if key in valid_keys:
+                params[key] = value
+        return params

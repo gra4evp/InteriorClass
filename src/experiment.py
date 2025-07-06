@@ -15,9 +15,10 @@ from src.schemas.configs import ExperimentConfig
 class Experiment:
     def __init__(
         self,
+        dataset_dir: Path,
         exp_dir: Path,
         class_labels: list[str],
-        split_config: dict[str, dict[str, int | float]],
+        splits: dict[str, dict[str, int | float]],
         exp_number: int | None = None,
         batch_size: int = 32,
         epochs: int = 10,
@@ -31,12 +32,14 @@ class Experiment:
         
         Можно передать либо полный конфиг, либо отдельные параметры.
         """
+        self.dataset_dir = dataset_dir
+
         exp_dir.mkdir(parents=True, exist_ok=True)
         self.exp_dir = exp_dir
 
         # Базовые параметры
         self.class_labels = class_labels
-        self.split_config = split_config
+        self.splits = splits
         self.exp_number = exp_number
         self.batch_size = batch_size
         self.epochs = epochs
@@ -47,30 +50,18 @@ class Experiment:
 
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # # Инициализация путей
-        # self.project_root = Path(self.paths_config.get("project_root", "."))
-        # self.exp_dir = self.project_root / "experiments" / f"exp{self.exp_number:03d}"
-        # self.exp_results_dir = self.exp_dir / "results"
-        # self.exp_results_dir.mkdir(parents=True, exist_ok=True)
 
         self._init_exp_components()
     
     def _init_exp_components(self):
-        # 2. ================================ Define paths =================================
-        project_root = Path.cwd()
-        data_dir = project_root / "data"
-        print(f"data_dir: {data_dir}")
-
-        dataset_dir = data_dir / "interior_dataset"
-
-        self.collector = SampleCollector(dataset_dir=dataset_dir, class_labels=self.class_labels)
+        # 1. ============================= Create SampleCollector =============================
+        self.collector = SampleCollector(dataset_dir=self.dataset_dir, class_labels=self.class_labels)
         samples = self.collector()
         print(f"Total samples: {len(samples)}")
 
 
-        # 3. ============================= Create DatasetSplitter ===========================
-        self.splitter = DatasetSplitter(splits=self.split_config, random_seed=self.random_seed)
+        # 2. ============================= Create DatasetSplitter =============================
+        self.splitter = DatasetSplitter(splits=self.splits, random_seed=self.random_seed)
 
         train_samples, val_samples, test_samples = self.splitter(samples, shuffle=True)
         print(f"Train samples: {len(train_samples)}")
@@ -78,22 +69,25 @@ class Experiment:
         print(f"Test samples: {len(test_samples)}")
 
 
-        # 4. ============================= Create Datasets =============================
+        # 3. ============================= Create Datasets =============================
         train_dataset = InteriorDataset(
-            train_samples,
-            transform=get_transforms(img_size=self.img_size, mode='train')
+            transforms=get_transforms(img_size=self.img_size, mode='train'),
+            transforms_filepath=self.exp_dir / "train_tranforms.json"
         )
         val_dataset = InteriorDataset(
-            val_samples,
-            transform=get_transforms(img_size=self.img_size, mode='val')
+            transforms=get_transforms(img_size=self.img_size, mode='val'),
+            transforms_filepath=self.exp_dir / "val_tranforms.json"
         )
         test_dataset = InteriorDataset(
-            test_samples,
-            transform=get_transforms(img_size=self.img_size, mode='test')
+            transforms=get_transforms(img_size=self.img_size, mode='test'),
+            transforms_filepath=self.exp_dir / "test_tranforms.json"
         )
+        train_dataset.prepare(train_samples)
+        val_dataset.prepare(val_samples)
+        test_dataset.prepare(test_samples)
 
 
-        # 5. ============================= Create DataLoaders =============================
+        # 4. ============================= Create DataLoaders =============================
         self.train_loader = DataLoader(
             dataset=train_dataset,
             batch_size=self.batch_size,
@@ -119,23 +113,21 @@ class Experiment:
             pin_memory=True
         )
 
-        # 6. ============================= Initializing model =============================
+        # 5. ============================= Initializing model =============================
         model = InteriorClassifier(num_classes=len(self.class_labels)).to(self.device)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.AdamW(model.parameters(), lr=self.start_lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.epochs)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
 
-        # experiments_dir = project_root / "experiments"
-        exp_dir = self.exp_dir / f"exp{self.exp_number:03d}"
-        exp_results_dir = exp_dir / "results"
+        exp_results_dir = self.exp_dir / "results"
         exp_results_dir.mkdir(parents=True, exist_ok=True)
 
-        # 7. ============================= Creating Trainer and start train =============================
+        # 6. ============================= Creating Trainer and start train =============================
         self.trainer = Trainer(
             model=model,
             criterion=criterion,
             optimizer=optimizer,
-            sheduler=scheduler,
+            scheduler=scheduler,
             epochs=self.epochs,
             device=self.device,
             exp_results_dir=exp_results_dir
@@ -150,6 +142,9 @@ class Experiment:
             val_loader=self.val_loader,
             test_loader=self.test_loader
         )
+
+        # 2. Сохраняем конфиг
+        self.save_config()
 
         # 2. Запускаем обучение
         print(f"Starting experiment {self.exp_number}")
@@ -169,6 +164,7 @@ class Experiment:
     def to_config(self) -> ExperimentConfig:
         """Возвращает конфиг эксперимента как Pydantic модель"""
         return ExperimentConfig(
+            dataset_dir=self.dataset_dir,
             exp_dir=self.exp_dir,
             exp_number=self.exp_number,
             epochs=self.epochs,
@@ -185,27 +181,101 @@ class Experiment:
     
     @classmethod
     def from_config(cls, config: ExperimentConfig) -> 'Experiment':
-        """Создает эксперимент из Pydantic конфига"""
-        trainer = Trainer.from_config(config.trainer_config)
-        return cls(
-            trainer=trainer,
-            exp_number=config.exp_number,
-            random_seed=config.random_seed,
-            exp_results_dir=config.exp_results_dir
+        """
+        Создает эксперимент из Pydantic конфига.
+        Восстанавливает все компоненты и подгружает модель из директории эксперимента
+        """
+        # 1. Восстановление SampleCollector и сборка сэмплов
+        collector = SampleCollector.from_config(config.collector_config)
+        samples = collector()
+
+        # 2. Восстановление DatasetSplitter и разбиение
+        splitter = DatasetSplitter.from_config(config.splitter_config)
+        train_samples, val_samples, test_samples = splitter(samples, shuffle=True)
+
+        # 3. Восстановление датасетов
+        train_dataset = InteriorDataset.from_config(config.train_dataset_config)
+        train_dataset.prepare(train_samples)
+        val_dataset = InteriorDataset.from_config(config.val_dataset_config)
+        val_dataset.prepare(val_samples)
+        test_dataset = InteriorDataset.from_config(config.test_dataset_config)
+        test_dataset.prepare(test_samples)
+
+        # 4. DataLoader'ы
+        train_loader = DataLoader(
+            dataset=train_dataset,
+            batch_size=config.trainer_config.train_loader_config.batch_size,
+            shuffle=config.trainer_config.train_loader_config.shuffle,
+            num_workers=config.trainer_config.train_loader_config.num_workers,
+            pin_memory=config.trainer_config.train_loader_config.pin_memory,
+            drop_last=True
         )
+        val_loader = DataLoader(
+            dataset=val_dataset,
+            batch_size=config.trainer_config.val_loader_config.batch_size,
+            shuffle=config.trainer_config.val_loader_config.shuffle,
+            num_workers=config.trainer_config.val_loader_config.num_workers,
+            pin_memory=config.trainer_config.val_loader_config.pin_memory
+        )
+        test_loader = DataLoader(
+            dataset=test_dataset,
+            batch_size=config.trainer_config.test_loader_config.batch_size,
+            shuffle=config.trainer_config.test_loader_config.shuffle,
+            num_workers=config.trainer_config.test_loader_config.num_workers,
+            pin_memory=config.trainer_config.test_loader_config.pin_memory
+        )
+
+        # 5. Восстановление Trainer из конфига
+        trainer = Trainer.from_config(config.trainer_config)
+        trainer.set_data_loaders(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=test_loader
+        )
+
+        # 6. Загрузка модели/весов
+        loaded, path = cls.load_model_from_dir(config.trainer_config.exp_results_dir, device=config.trainer_config.device)
+        if isinstance(loaded, dict) and 'model_state_dict' in loaded:
+            trainer.model.load_state_dict(loaded['model_state_dict'])
+        elif isinstance(loaded, torch.nn.Module):
+            trainer.model = loaded
+        # Иначе оставляем trainer.model как есть
+
+        # 7. Собираем Experiment
+        exp = cls(
+            dataset_dir=config.dataset_dir,
+            exp_dir=config.exp_dir,
+            class_labels=config.collector_config.class_labels,
+            splits=config.splitter_config.splits,
+            exp_number=config.exp_number,
+            batch_size=config.trainer_config.train_loader_config.batch_size,
+            epochs=config.epochs,
+            img_size=config.img_size,
+            start_lr=config.start_lr,
+            random_seed=config.random_seed,
+            device=config.trainer_config.device
+        )
+        # Перезаписываем подготовленные компоненты
+        exp.collector = collector
+        exp.splitter = splitter
+        exp.train_loader = train_loader
+        exp.val_loader = val_loader
+        exp.test_loader = test_loader
+        exp.trainer = trainer
+        return exp
     
     def save_config(self, path: Path | None = None) -> None:
         """Сохраняет конфиг эксперимента в файл"""
         path = path or (self.exp_dir / "config.json")
         with open(path, "w") as f:
-            json.dump(self.to_config().dict(), f, indent=4)
+            json.dump(self.to_config().model_dump(mode='json'), f, indent=4)
     
     @classmethod
     def load_config(cls, path: Path) -> ExperimentConfig:
         """Загружает конфиг из файла"""
-        with open(path) as f:
-            config_data = json.load(f)
-        return ExperimentConfig(**config_data)
+        with open(path, 'r') as f:
+            config_dict = json.load(f)
+        return ExperimentConfig(**config_dict)
 
     @staticmethod
     def load_model_from_dir(exp_results_dir: Path, device: str = "cpu"):
@@ -250,53 +320,3 @@ class Experiment:
             f"No valid checkpoint or model found in {exp_results_dir}\n"
             f"Available files: {available_files or 'None'}"
         )
-
-
-if __name__ == "__main__":
-    # Example Создание эксперимента напрямую (без конфиг-файла):
-    experiment = Experiment(
-        dataset_class=InteriorDataset,
-        model_class=InteriorClassifier,
-        trainer_class=Trainer,
-        splitter_class=DatasetSplitter,
-        exp_number=5,
-        random_seed=42,
-        dataset_config={
-            "img_size": 380,
-            "batch_size": 32,
-            "split_ratio": {"train": 0.7, "val": 0.15, "test": 0.15},
-            "class_labels": ["class1", "class2", "class3"]
-        },
-        model_config={
-            "name": "InteriorClassifier",
-            "params": {"num_classes": 3}
-        },
-        training_config={
-            "epochs": 10,
-            "criterion": "CrossEntropyLoss",
-            "optimizer": {
-                "name": "AdamW",
-                "params": {"lr": 3e-5}
-            }
-        }
-    )
-
-    experiment.run()
-
-
-    # Использование с конфиг файлом
-
-    # Загрузка конфига
-    config = Experiment.load_config(Path("configs/experiment_005.json"))
-
-    # Создание эксперимента
-    experiment = Experiment.from_config(
-        config=config,
-        dataset_class=InteriorDataset,
-        model_class=InteriorClassifier,
-        trainer_class=Trainer,
-        splitter_class=DatasetSplitter
-    )
-
-    # Запуск
-    experiment.run()
