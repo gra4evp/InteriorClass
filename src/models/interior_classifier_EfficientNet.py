@@ -59,6 +59,21 @@ class InteriorClassifier(nn.Module):
         features = self.backbone(x)
         return self.head(features)
 
+    def to_config(self) -> ModelConfig:
+        head = None
+        if self.use_head:
+            head = HeadConfig(
+                hidden_dim=self.head_hidden_dim,
+                dropout=self.head_dropout,
+                activation=self.head_activation
+            )
+        return ModelConfig(
+            backbone_name=self.backbone_name,
+            num_classes=self.num_classes,
+            pretrained=self.pretrained,
+            head=head
+        )
+
     @classmethod
     def from_config(cls, config: ModelConfig) -> 'InteriorClassifier':
         head = config.head
@@ -76,19 +91,4 @@ class InteriorClassifier(nn.Module):
             num_classes=config.num_classes,
             backbone_name=config.backbone_name,
             pretrained=config.pretrained,
-        )
-
-    def to_config(self) -> ModelConfig:
-        head = None
-        if self.use_head:
-            head = HeadConfig(
-                hidden_dim=self.head_hidden_dim,
-                dropout=self.head_dropout,
-                activation=self.head_activation
-            )
-        return ModelConfig(
-            backbone_name=self.backbone_name,
-            num_classes=self.num_classes,
-            pretrained=self.pretrained,
-            head=head
         )

@@ -112,37 +112,40 @@ class SchedulerConfig(BaseModel):
     params: dict[str, Any]  # {"step_size": 30, "gamma": 0.1}
 
 
-class HyperParametersConfig(BaseModel):
-    batch_size: int
-    epochs: int
-    img_size: int
-    random_seed: int
-    device: str
-    criterion: str  # "CrossEntropyLoss", "MSELoss", etc.
-    optimizer: OptimizerConfig
-    scheduler: SchedulerConfig | None = None
+# class HyperParametersConfig(BaseModel):
+#     batch_size: int
+#     epochs: int
+#     img_size: int
+#     random_seed: int
+#     device: str
+#     criterion: str  # "CrossEntropyLoss", "MSELoss", etc.
+#     optimizer: OptimizerConfig
+#     scheduler: SchedulerConfig | None = None
 
 
 class TrainerConfig(BaseModel):
     model_config: ModelConfig
     criterion_config: CriterionConfig
     optimizer_config: OptimizerConfig
-    scheduler_config: SchedulerConfig | None = None
-    train_loader_config: DataLoaderConfig
-    val_loader_config: DataLoaderConfig
-    test_loader_config: DataLoaderConfig
+    scheduler_config: SchedulerConfig | None
     epochs: int
     device: str
     exp_results_dir: Path
+    train_loader_config: DataLoaderConfig | None
+    val_loader_config: DataLoaderConfig | None
+    test_loader_config: DataLoaderConfig | None
 
 
 class ExperimentConfig(BaseModel):
-    exp_results_dir: Path
-    class_labels: list[str]
-    split_config: dict[str, dict[str, int | float]]
+    exp_dir: Path
     exp_number: int
     epochs: int
     img_size: int
     start_lr: float
     random_seed: int
+    collector_config: SampleCollectorConfig
+    splitter_config: DatasetSplitterConfig
+    train_dataset_config: DatasetConfig
+    val_dataset_config: DatasetConfig
+    test_dataset_config: DatasetConfig
     trainer_config: TrainerConfig

@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report, confusion_matrix
 from src.config import TrainingConfig, CLASS_LABELS
 from src.schemas.configs import TrainerConfig, CriterionConfig, OptimizerConfig, SchedulerConfig, DataLoaderConfig
+from src.models.interior_classifier_EfficientNet import InteriorClassifier
 
 
 class Trainer:
@@ -23,9 +24,6 @@ class Trainer:
             criterion: torch.nn.CrossEntropyLoss,
             optimizer: torch.optim.Optimizer,
             sheduler: torch.optim.lr_scheduler.LRScheduler,
-            train_loader: torch.utils.data.DataLoader,
-            val_loader: torch.utils.data.DataLoader,
-            test_loader: torch.utils.data.DataLoader,
             epochs: int,
             device: str,
             exp_results_dir: Path
@@ -39,9 +37,9 @@ class Trainer:
         self.epochs = epochs
         self.device = device
 
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.test_loader = test_loader
+        self.train_loader: torch.utils.data.DataLoader | None = None
+        self.val_loader: torch.utils.data.DataLoader | None = None
+        self.test_loader: torch.utils.data.DataLoader | None = None
 
         # Save paths
         self.exp_results_dir = exp_results_dir
@@ -87,6 +85,9 @@ class Trainer:
         return train_loss
     
     def train(self) -> torch.nn.Module:
+        if not all([self.train_loader, self.val_loader, self.test_loader]):
+            raise ValueError("Для обучения должны быть заданы все три DataLoader: train_loader, val_loader, test_loader.")
+
         for epoch in range(1, self.epochs + 1):
             self._current_epoch = epoch
             train_loss = self.train_epoch(epoch)
@@ -238,26 +239,32 @@ class Trainer:
             params=self.scheduler.state_dict()
         )
 
-        train_loader_config = DataLoaderConfig(
-            batch_size=self.train_loader.batch_size,
-            shuffle=True,
-            num_workers=self.train_loader.num_workers,
-            pin_memory=self.train_loader.pin_memory
-        )
+        train_loader_config = None
+        if self.train_loader is not None:
+            train_loader_config = DataLoaderConfig(
+                batch_size=self.train_loader.batch_size,
+                shuffle=True,
+                num_workers=self.train_loader.num_workers,
+                pin_memory=self.train_loader.pin_memory
+            )
+        
+        val_loader_config = None
+        if self.val_loader is not None:
+            val_loader_config = DataLoaderConfig(
+                batch_size=self.val_loader.batch_size,
+                shuffle=False,
+                num_workers=self.val_loader.num_workers,
+                pin_memory=self.val_loader.pin_memory
+            )
 
-        val_loader_config = DataLoaderConfig(
-            batch_size=self.val_loader.batch_size,
-            shuffle=False,
-            num_workers=self.val_loader.num_workers,
-            pin_memory=self.val_loader.pin_memory
-        )
-
-        test_loader_config = DataLoaderConfig(
-            batch_size=self.test_loader.batch_size,
-            shuffle=False,
-            num_workers=self.test_loader.num_workers,
-            pin_memory=self.test_loader.pin_memory
-        )
+        test_loader_config = None
+        if self.test_loader is not None:
+            test_loader_config = DataLoaderConfig(
+                batch_size=self.test_loader.batch_size,
+                shuffle=False,
+                num_workers=self.test_loader.num_workers,
+                pin_memory=self.test_loader.pin_memory
+            )
 
         return TrainerConfig(
             model_config=self.model.to_config(),
@@ -266,23 +273,97 @@ class Trainer:
             scheduler_config=scheduler_config,
             train_loader_config=train_loader_config,
             val_loader_config=val_loader_config,
-            test_loader_config=test_loader_config
+            test_loader_config=test_loader_config,
+            epochs=self.epochs,
+            device=self.device,
+            exp_results_dir=self.exp_results_dir
         )
 
     @classmethod
     def from_config(cls, config: TrainerConfig) -> "Trainer":
+        """
+        Создает Trainer из конфига.
+        
+        Args:
+            config: Конфигурация тренера
+            
+        Returns:
+            Trainer с созданными объектами из конфига
+        """
+        # Создаем модель из конфига
+        model = InteriorClassifier.from_config(config.model_config)
+        
+        # Создаем criterion из конфига
+        criterion_class = getattr(torch.nn, config.criterion_config.name)
+        criterion = criterion_class(**config.criterion_config.params)
+        
+        # Создаем optimizer из конфига
+        optimizer_class = getattr(torch.optim, config.optimizer_config.name)
+        optimizer = optimizer_class(model.parameters(), **config.optimizer_config.params)
+        
+        # Создаем scheduler из конфига (если есть)
+        scheduler_class = getattr(torch.optim.lr_scheduler, config.scheduler_config.name)
+        scheduler = scheduler_class(optimizer, **config.scheduler_config.params)
+        
+        # # Создаем DataLoader'ы из конфигов и dataset'ов
+        # train_loader = None
+        # val_loader = None
+        # test_loader = None
+        
+        # if train_dataset is not None:
+        #     train_loader = DataLoader(
+        #         train_dataset,
+        #         batch_size=config.train_loader_config.batch_size,
+        #         shuffle=config.train_loader_config.shuffle,
+        #         num_workers=config.train_loader_config.num_workers,
+        #         pin_memory=config.train_loader_config.pin_memory
+        #     )
+        
+        # if val_dataset is not None:
+        #     val_loader = DataLoader(
+        #         val_dataset,
+        #         batch_size=config.val_loader_config.batch_size,
+        #         shuffle=config.val_loader_config.shuffle,
+        #         num_workers=config.val_loader_config.num_workers,
+        #         pin_memory=config.val_loader_config.pin_memory
+        #     )
+        
+        # if test_dataset is not None:
+        #     test_loader = DataLoader(
+        #         test_dataset,
+        #         batch_size=config.test_loader_config.batch_size,
+        #         shuffle=config.test_loader_config.shuffle,
+        #         num_workers=config.test_loader_config.num_workers,
+        #         pin_memory=config.test_loader_config.pin_memory
+        #     )
+        
         return cls(
-            model=config.model_config,
-            criterion=config.criterion_config,
-            optimizer=config.optimizer_config,
-            scheduler=config.scheduler_config,
-            train_loader=config.train_loader,
-            val_loader=config.val_loader,
-            test_loader=config.test_loader,
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
+            sheduler=scheduler,
             epochs=config.epochs,
             device=config.device,
             exp_results_dir=config.exp_results_dir
         )
+
+    def set_data_loaders(
+            self,
+            train_loader: torch.utils.data.DataLoader,
+            val_loader: torch.utils.data.DataLoader,
+            test_loader: torch.utils.data.DataLoader
+        ) -> None:
+        """
+        Устанавливает DataLoader'ы для тренера.
+        
+        Args:
+            train_dataset: Dataset для обучения
+            val_dataset: Dataset для валидации
+            test_dataset: Dataset для тестирования
+        """
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.test_loader = test_loader
 
     def save_checkpoint(self, epoch: int, val_loss: float, val_accuracy: float) -> None:
         save_obj = {

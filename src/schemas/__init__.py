@@ -3,8 +3,15 @@ from .configs import (
     SampleCollectorConfig,
     DatasetSplitterConfig,
     DatasetConfig,
+    DataLoaderConfig,
+
     HeadConfig,
     ModelConfig,
+    CriterionConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+
+    TrainerConfig,
     ExperimentConfig
 )
 
@@ -12,10 +19,18 @@ __all__ = [
     'SampleItem',
     'DatasetSplit',
     'RatioFloat',
+
     'SampleCollectorConfig',
     'DatasetSplitterConfig',
-    'DatasetConfig'
+    'DatasetConfig',
+    'DataLoaderConfig',
+
     'HeadConfig',
     'ModelConfig',
+    'CriterionConfig',
+    'OptimizerConfig',
+    'SchedulerConfig',
+
+    'TrainerConfig',
     'ExperimentConfig'
 ]

@@ -57,13 +57,6 @@ class SampleCollector:
         
         return sample_items
 
-    @classmethod
-    def from_config(cls, config: SampleCollectorConfig):
-        kwargs = config.model_dump()
-        # Deleting the service fields that are needed when saving
-        _ = kwargs.pop('samples_count', default=None)
-        return cls(**kwargs)
-    
     def to_config(self) -> SampleCollectorConfig:
         return SampleCollectorConfig(
             dataset_dir=self.dataset_dir,
@@ -71,3 +64,10 @@ class SampleCollector:
             file_extensions=self.file_extensions,
             samples_count=self._samples_count
         )
+
+    @classmethod
+    def from_config(cls, config: SampleCollectorConfig):
+        kwargs = config.model_dump()
+        # Deleting the service fields that are needed when saving
+        _ = kwargs.pop('samples_count', default=None)
+        return cls(**kwargs)
