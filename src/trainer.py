@@ -1,18 +1,16 @@
 # src/trainer.py
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 import json
 from tqdm import tqdm
 
 import torch
-import seaborn as sns
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
 from sklearn.metrics import classification_report, confusion_matrix
 from src.config import CLASS_LABELS
 from src.schemas.configs import TrainerConfig, CriterionConfig, OptimizerConfig, SchedulerConfig, DataLoaderConfig
 from src.models.interior_classifier_EfficientNet import InteriorClassifier
+from src.schemas.training import TrainerEvent, TrainEpochEvent, TestEvent, ValidationEvent, EventType, Metric
+from pydantic import BaseModel
 
 
 class Trainer:
@@ -43,18 +41,11 @@ class Trainer:
         self.exp_results_dir = exp_results_dir
         self.log_path = exp_results_dir / "training_report.json"
 
-        self.log_dict: dict[str, Any] = {
-            "train_loss": [],
-            "val_loss": [],
-            "val_accuracy": [],
-            "best_val_loss": float("inf")
-        }
-        self.best_val_loss = float("inf")
         self._load_log()
         self._current_epoch: int | None = None
         self._best_ckeckpoint_path: Path | None = None
 
-    def train_epoch(self, epoch: int) -> float:
+    def train_epoch(self, epoch: int) -> TrainEpochEvent:
         self.model.train()
         train_loss = 0.0
         train_bar = tqdm(
@@ -80,68 +71,25 @@ class Trainer:
 
         self.scheduler.step()
         train_loss = round(train_loss / len(self.train_loader.dataset), 4)
-        return train_loss
+
+        event = TrainEpochEvent(
+            type=EventType.epoch_end,
+            epoch=epoch,
+            loss_value=train_loss
+        )
+        return event
     
-    def train(self) -> torch.nn.Module:
+    def train(self) -> Generator[TrainEpochEvent]:
         if not all([self.train_loader, self.val_loader, self.test_loader]):
-            raise ValueError("Для обучения должны быть заданы все три DataLoader: train_loader, val_loader, test_loader.")
+            raise ValueError(
+                "All three dataloaders must be set for training: train_loader, val_loader, test_loader."
+            )
 
         for epoch in range(1, self.epochs + 1):
             self._current_epoch = epoch
-            train_loss = self.train_epoch(epoch)
+            yield self.train_epoch(epoch)
 
-            # ========================== VALIDATION REPORT ==============================
-            val_loss, val_report = self.validate(epoch)
-            val_accuracy = round(val_report['accuracy'], 4)
-            self.log_dict["train_loss"].append(train_loss)
-            self.log_dict["val_loss"].append(val_loss)
-            self.log_dict["val_accuracy"].append(val_accuracy)
-
-            print(f"\nEpoch {epoch} Summary:")
-            print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
-            print(f"Val Accuracy: {val_accuracy:.4f}")
-            print(
-                f"Macro Avg: P={val_report['macro avg']['precision']:.4f} "
-                f"R={val_report['macro avg']['recall']:.4f} "
-                f"F1={val_report['macro avg']['f1-score']:.4f}"
-            )
-            
-            if val_loss < self.best_val_loss:
-                self.best_val_loss = val_loss
-                self.log_dict["best_val_loss"] = self.best_val_loss
-                self.save_checkpoint(epoch, val_loss, val_accuracy)
-                self.save_model()
-                self._best_ckeckpoint_path = self.checkpoint_path  # Сохраняем путь к лучшему чекпоинту
-                saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
-                print(f"Model saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
-                print(f"Checkpoint saved to {saved_to_text} (Val Loss improved to {val_loss:.4f})")
-            self.save_log()
-        
-        # =========================== TEST REPORT ==========================
-        # Перед тестированием подгружаем лучший чекпоинт, если он есть
-        if self._best_ckeckpoint_path is not None and self._best_ckeckpoint_path.exists():
-            checkpoint = torch.load(self._best_ckeckpoint_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint["model_state_dict"])
-            print(f"Loaded best checkpoint from {self._best_ckeckpoint_path}")
-        else:
-            print("Warning: Best checkpoint path is not set or file does not exist. Testing current model state.")
-        test_report, conf_matrix_dict = self.test()
-
-        print("Final Test Results:")
-        print(f"Test Accuracy: {test_report['accuracy']:.4f}")
-        print(
-            f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "
-            f"R={test_report['macro avg']['recall']:.4f} "
-            f"F1={test_report['macro avg']['f1-score']:.4f}"
-        )
-
-        self.log_dict["test_report"] = test_report
-        self.log_dict["confusion_matrix"] = conf_matrix_dict
-        self.save_log()
-
-        return self.model
-
-    def validate(self, epoch: int) -> tuple[float, dict[str, Any]]:
+    def validate(self) -> ValidationEvent:
         self.model.eval()
 
         val_loss = 0.0
@@ -150,7 +98,7 @@ class Trainer:
         
         val_bar = tqdm(
             self.val_loader,
-            desc=f'Epoch {epoch}/{self.epochs} [Val]',
+            desc=f'Epoch {self._current_epoch}/{self.epochs} [Val]',
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
         with torch.no_grad():
@@ -177,9 +125,23 @@ class Trainer:
             output_dict=True
         )
 
-        return val_loss, report
+        event = ValidationEvent(
+            type=EventType.validation,
+            epoch=self._current_epoch,
+            loss_value=val_loss,
+            metrics=self._flatten_classification_report(report)
+        )
+        return event
 
-    def test(self) -> tuple[float, dict[str, Any]]:
+    def test(self) -> TestEvent:
+        # Перед тестированием подгружаем лучший чекпоинт, если он есть
+        if self._best_ckeckpoint_path is not None and self._best_ckeckpoint_path.exists():
+            checkpoint = torch.load(self._best_ckeckpoint_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint["model_state_dict"])
+            print(f"Loaded best checkpoint from {self._best_ckeckpoint_path}")
+        else:
+            print("Warning: Best checkpoint path is not set or file does not exist. Testing current model state.")
+
         self.model.eval()
 
         all_idxs: list[int] = []
@@ -211,17 +173,20 @@ class Trainer:
 
         # Generate confusion matrix
         conf_matrix = confusion_matrix(all_idxs, all_preds)
-        
+                
         # Convert to dictionary for JSON serialization
         conf_matrix_dict = {
             "matrix": conf_matrix.tolist(),
             "labels": CLASS_LABELS
         }
 
-        # Save confusion matrix plot
-        self._save_confusion_matrix_plot(conf_matrix=conf_matrix)
-
-        return report, conf_matrix_dict
+        event = TestEvent(
+            type=EventType.test,
+            loss_value=None,
+            metrics=self._flatten_classification_report(report),
+            artifacts={"confusion_matrix": conf_matrix_dict}
+        )
+        return event
 
     def to_config(self) -> TrainerConfig:
         """
@@ -354,10 +319,6 @@ class Trainer:
     def save_model(self) -> None:
         torch.save(self.model, self.model_path)
     
-    def save_log(self) -> None:
-        with open(self.log_path, "w") as f:
-            json.dump(self.log_dict, f, indent=4)
-    
     @property
     def checkpoint_path(self) -> Path:
         if self._current_epoch is None:
@@ -369,45 +330,6 @@ class Trainer:
         if self._current_epoch is None:
             return self.exp_results_dir / "model.pth"
         return self.exp_results_dir / f"model_epoch{self._current_epoch:02d}.pth"
-
-    def _load_log(self) -> None:
-        if self.log_path.exists():
-            with open(self.log_path, "r") as f:
-                self.log_dict = json.load(f)
-            self.best_val_loss = self.log_dict.get("best_val_loss", float("inf"))
-
-    def _save_confusion_matrix_plot(self, conf_matrix: np.ndarray) -> None:
-        plt.figure(figsize=(10, 8))
-        df_cm = pd.DataFrame(
-            conf_matrix, 
-            index=CLASS_LABELS,
-            columns=CLASS_LABELS
-        )
-        sns.heatmap(df_cm, annot=True, fmt='d', cmap='Blues')
-        plt.title('Confusion Matrix')
-        plt.xlabel('Predicted')
-        plt.ylabel('Ground Truth')
-        
-        plot_path = self.exp_results_dir / "confusion_matrix.png"
-        plt.savefig(plot_path, bbox_inches='tight')
-        plt.close()
-        
-        # Also save normalized version
-        cm_normalized = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis]
-        plt.figure(figsize=(10, 8))
-        df_cm_norm = pd.DataFrame(
-            cm_normalized, 
-            index=CLASS_LABELS,
-            columns=CLASS_LABELS
-        )
-        sns.heatmap(df_cm_norm, annot=True, fmt='.2f', cmap='Blues')
-        plt.title('Normalized Confusion Matrix')
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
-        
-        plot_norm_path = self.exp_results_dir / "confusion_matrix_normalized.png"
-        plt.savefig(plot_norm_path, bbox_inches='tight')
-        plt.close()
     
     def _get_criterion_params(self):
         """
@@ -452,3 +374,26 @@ class Trainer:
             if key in valid_keys:
                 params[key] = value
         return params
+    
+    def _flatten_classification_report(report: dict) -> list[Metric]:
+        metrics = []
+        for key, value in report.items():
+            if isinstance(value, dict):
+                # Например, 'macro avg', 'weighted avg', или имя класса
+                for subkey, subval in value.items():
+                    if isinstance(subval, (int, float)):
+                        metrics.append(
+                            Metric(
+                                name=f"{key}.{subkey}",
+                                value=float(subval)
+                            )
+                        )
+            elif isinstance(value, (int, float)):
+                # Например, 'accuracy'
+                metrics.append(
+                    Metric(
+                        name=key,
+                        value=float(value)
+                    )
+                )
+        return metrics

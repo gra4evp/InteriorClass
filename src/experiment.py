@@ -1,9 +1,15 @@
+# src/experiment.py
 from pathlib import Path
 import json
-from typing import Literal
+from typing import Literal, Any
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
+
 from src.datasets.interior_dataset import InteriorDataset, get_transforms
 from src.models.interior_classifier_EfficientNet import InteriorClassifier
 from src.trainer import Trainer
@@ -50,6 +56,14 @@ class Experiment:
 
         if device is None:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        self.log_dict: dict[str, Any] = {
+            "train_loss": [],
+            "val_loss": [],
+            "val_accuracy": [],
+            "best_val_loss": float("inf")
+        }
+        self._best_val_loss = float("inf")
 
         self._init_exp_components()
     
@@ -153,9 +167,55 @@ class Experiment:
 
         # 2. Запускаем обучение
         print(f"Starting experiment {self.exp_number}")
-        model = self.trainer.train()
+        for train_event in self.trainer.train():
+            self.log_dict["train_loss"].append(train_event.loss_value)
+
+
+            # ========================== VALIDATION REPORT ==============================
+            val_event = self.trainer.validate()
+
+            val_accuracy = round(val_event.metrics['accuracy'], 4)
+            self.log_dict["val_loss"].append(val_event.loss_value)
+            self.log_dict["val_accuracy"].append(val_accuracy)
+
+            print(f"\nEpoch {train_event.epoch} Summary:")
+            print(f"Train Loss: {train_event.loss_value:.4f} | Val Loss: {val_event.loss_value:.4f}")
+            print(f"Val Accuracy: {val_accuracy:.4f}")
+            print(
+                f"Macro Avg: P={val_event.metrics['macro avg']['precision']:.4f} "
+                f"R={val_event.metrics['macro avg']['recall']:.4f} "
+                f"F1={val_event.metrics['macro avg']['f1-score']:.4f}"
+            )
+            
+            if val_event.loss_value < self.best_val_loss:
+                self.best_val_loss = val_event.loss_value
+                self.log_dict["best_val_loss"] = self.best_val_loss
+                self.save_checkpoint(train_event.epoch, val_event.loss_value, val_accuracy)
+                self.save_model()
+                self._best_ckeckpoint_path = self.checkpoint_path  # Сохраняем путь к лучшему чекпоинту
+                saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
+                print(f"Model saved to {saved_to_text} (Val Loss improved to {val_event.loss_value:.4f})")
+                print(f"Checkpoint saved to {saved_to_text} (Val Loss improved to {val_event.loss_value:.4f})")
+            self.save_log()
         
-        return model
+        # =========================== TEST REPORT ==========================
+        test_event = self.trainer.test()
+
+        print("Final Test Results:")
+        print(f"Test Accuracy: {test_event.metrics['accuracy']:.4f}")
+        print(
+            f"Macro Avg: P={test_event.metrics['macro avg']['precision']:.4f} "
+            f"R={test_event.metrics['macro avg']['recall']:.4f} "
+            f"F1={test_event.metrics['macro avg']['f1-score']:.4f}"
+        )
+
+        self.log_dict["test_report"] = test_report
+        self.log_dict["confusion_matrix"] = conf_matrix_dict
+        self._save_log()
+                # Save confusion matrix plot
+        self._save_confusion_matrix_plot(conf_matrix=conf_matrix)
+        
+        return self.trainer.model
 
     def load_latest_file(self, pattern: str) -> Path | None:
         """Находит самый свежий файл по паттерну"""
@@ -325,3 +385,46 @@ class Experiment:
             f"No valid checkpoint or model found in {exp_results_dir}\n"
             f"Available files: {available_files or 'None'}"
         )
+    
+    def _save_log(self) -> None:
+        with open(self.log_path, "w") as f:
+            json.dump(self.log_dict, f, indent=4)
+    
+    def _load_log(self) -> None:
+        if self.log_path.exists():
+            with open(self.log_path, "r") as f:
+                self.log_dict = json.load(f)
+            self._best_val_loss = self.log_dict.get("best_val_loss", float("inf"))
+    
+    def _save_confusion_matrix_plot(self, conf_matrix: np.ndarray) -> None:
+        plt.figure(figsize=(10, 8))
+        df_cm = pd.DataFrame(
+            conf_matrix, 
+            index=self.class_labels,
+            columns=self.class_labels
+        )
+        sns.heatmap(df_cm, annot=True, fmt='d', cmap='Blues')
+        plt.title('Confusion Matrix')
+        plt.xlabel('Predicted')
+        plt.ylabel('Ground Truth')
+        
+        plot_path = self.exp_results_dir / "confusion_matrix.png"
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close()
+        
+        # Also save normalized version
+        cm_normalized = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis]
+        plt.figure(figsize=(10, 8))
+        df_cm_norm = pd.DataFrame(
+            cm_normalized, 
+            index=self.class_labels,
+            columns=self.class_labels
+        )
+        sns.heatmap(df_cm_norm, annot=True, fmt='.2f', cmap='Blues')
+        plt.title('Normalized Confusion Matrix')
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        
+        plot_norm_path = self.exp_results_dir / "confusion_matrix_normalized.png"
+        plt.savefig(plot_norm_path, bbox_inches='tight')
+        plt.close()
