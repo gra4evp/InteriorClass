@@ -175,6 +175,7 @@ cython_debug/
 
 
 # profect files
+*.DS_Store
 /data/cosmetic
 /data/labeled*
 /data/yandex_data
@@ -182,4 +183,11 @@ cython_debug/
 /data/floor_plans
 /data/interior_dataset
 /data/streets_facades
+/data/test_pictures
+/data/loft
+/data/A0*
+/data/A1*
+/data/B0*
+/data/B1*
+/experiments/
 /venv*
