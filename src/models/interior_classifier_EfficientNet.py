@@ -2,7 +2,10 @@ from typing import Literal
 from torch import nn
 import timm
 from src.schemas import HeadConfig, NNModelConfig
+# from torchvision.models import efficientnet_v2_s
 
+# print(timm.__version__)
+# print(timm.list_models("efficientnet*", pretrained=True))
 
 class InteriorClassifier(nn.Module):
     """
@@ -14,7 +17,7 @@ class InteriorClassifier(nn.Module):
         num_classes: int = 8,
         backbone_name: str = 'efficientnet_b3',
         pretrained: bool = True,
-        use_head: bool = False,
+        use_head: bool = True,
         head_hidden_dim: int = 512,
         head_dropout: float = 0.3,
         head_activation: Literal['relu', 'gelu'] = 'relu'

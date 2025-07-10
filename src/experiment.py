@@ -114,7 +114,12 @@ class Experiment:
         )
 
         # 5. ============================= Initializing model =============================
-        model = InteriorClassifier(num_classes=len(self.class_labels)).to(self.device)
+        model = InteriorClassifier(
+            num_classes=len(self.class_labels),
+            backbone_name='efficientnet_b3',
+            use_head=True
+        ).to(self.device)
+        
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.AdamW(model.parameters(), lr=self.start_lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
