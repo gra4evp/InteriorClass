@@ -74,7 +74,7 @@ class Trainer:
         )
         return event
     
-    def train(self) -> Generator[TrainEpochEvent]:
+    def train(self) -> Generator[TrainEpochEvent, None, None]:
         if not all([self.train_loader, self.val_loader, self.test_loader]):
             raise ValueError(
                 "All three dataloaders must be set for training: train_loader, val_loader, test_loader."
@@ -208,8 +208,7 @@ class Trainer:
             val_loader_config=val_loader_config,
             test_loader_config=test_loader_config,
             epochs=self.epochs,
-            device=self.device,
-            exp_results_dir=self.exp_results_dir
+            device=self.device
         )
 
     @classmethod
@@ -249,8 +248,7 @@ class Trainer:
             optimizer=optimizer,
             scheduler=scheduler,
             epochs=config.epochs,
-            device=config.device,
-            exp_results_dir=config.exp_results_dir
+            device=config.device
         )
 
     def set_data_loaders(

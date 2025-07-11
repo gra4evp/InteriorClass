@@ -90,26 +90,26 @@ class Experiment:
 
 
         # 3. ============================= Create Datasets =============================
-        train_dataset = InteriorDataset(
+        self.train_dataset = InteriorDataset(
             transforms=get_transforms(img_size=self.img_size, mode='train'),
             transforms_filepath=self.exp_dir / "train_tranforms.json"
         )
-        val_dataset = InteriorDataset(
+        self.val_dataset = InteriorDataset(
             transforms=get_transforms(img_size=self.img_size, mode='val'),
             transforms_filepath=self.exp_dir / "val_tranforms.json"
         )
-        test_dataset = InteriorDataset(
+        self.test_dataset = InteriorDataset(
             transforms=get_transforms(img_size=self.img_size, mode='test'),
             transforms_filepath=self.exp_dir / "test_tranforms.json"
         )
-        train_dataset.prepare(train_samples)
-        val_dataset.prepare(val_samples)
-        test_dataset.prepare(test_samples)
+        self.train_dataset.prepare(train_samples)
+        self.val_dataset.prepare(val_samples)
+        self.test_dataset.prepare(test_samples)
 
 
         # 4. ============================= Create DataLoaders =============================
         self.train_loader = DataLoader(
-            dataset=train_dataset,
+            dataset=self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=4,
@@ -118,7 +118,7 @@ class Experiment:
         )
 
         self.val_loader = DataLoader(
-            dataset=val_dataset,
+            dataset=self.val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=4,
@@ -126,7 +126,7 @@ class Experiment:
         )
 
         self.test_loader = DataLoader(
-            dataset=test_dataset,
+            dataset=self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=4,
@@ -151,8 +151,7 @@ class Experiment:
             optimizer=optimizer,
             scheduler=scheduler,
             epochs=self.epochs,
-            device=self.device,
-            exp_results_dir=exp_results_dir
+            device=self.device
         )
     
     def run(self) -> torch.nn.Module:
