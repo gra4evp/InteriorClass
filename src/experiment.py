@@ -9,6 +9,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+from sklearn.metrics import classification_report, confusion_matrix
 
 from src.datasets.interior_dataset import InteriorDataset, get_transforms
 from src.models.interior_classifier_EfficientNet import InteriorClassifier
@@ -16,7 +17,7 @@ from src.trainer import Trainer
 from src.datasets.utils.splitter import DatasetSplitter
 from src.datasets.utils.collector import SampleCollector
 from src.schemas.configs import ExperimentConfig
-
+from src.schemas.training import Metric
 
 class Experiment:
     def __init__(
@@ -63,7 +64,12 @@ class Experiment:
             "val_accuracy": [],
             "best_val_loss": float("inf")
         }
+        self.exp_results_dir = self.exp_dir / "results"
+        self.exp_results_dir.mkdir(parents=True, exist_ok=True)
+        self.log_path = self.exp_results_dir / "training_report.json"
+
         self._best_val_loss = float("inf")
+        self._best_ckeckpoint_path: Path | None = None
 
         self._init_exp_components()
     
@@ -138,9 +144,6 @@ class Experiment:
         optimizer = optim.AdamW(model.parameters(), lr=self.start_lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self.epochs)
 
-        exp_results_dir = self.exp_dir / "results"
-        exp_results_dir.mkdir(parents=True, exist_ok=True)
-
         # 6. ============================= Creating Trainer and start train =============================
         self.trainer = Trainer(
             model=model,
@@ -170,11 +173,19 @@ class Experiment:
         for train_event in self.trainer.train():
             self.log_dict["train_loss"].append(train_event.loss_value)
 
-
             # ========================== VALIDATION REPORT ==============================
             val_event = self.trainer.validate()
 
-            val_accuracy = round(val_event.metrics['accuracy'], 4)
+            val_report = classification_report(
+                val_event.artifacts['targets'],
+                val_event.artifacts['predictions'],
+                target_names=self.class_labels,
+                zero_division=0,
+                digits=4,
+                output_dict=True
+            )
+
+            val_accuracy = round(val_report['accuracy'], 4)
             self.log_dict["val_loss"].append(val_event.loss_value)
             self.log_dict["val_accuracy"].append(val_accuracy)
 
@@ -182,9 +193,9 @@ class Experiment:
             print(f"Train Loss: {train_event.loss_value:.4f} | Val Loss: {val_event.loss_value:.4f}")
             print(f"Val Accuracy: {val_accuracy:.4f}")
             print(
-                f"Macro Avg: P={val_event.metrics['macro avg']['precision']:.4f} "
-                f"R={val_event.metrics['macro avg']['recall']:.4f} "
-                f"F1={val_event.metrics['macro avg']['f1-score']:.4f}"
+                f"Macro Avg: P={val_report['macro avg']['precision']:.4f} "
+                f"R={val_report['macro avg']['recall']:.4f} "
+                f"F1={val_report['macro avg']['f1-score']:.4f}"
             )
             
             if val_event.loss_value < self.best_val_loss:
@@ -201,12 +212,33 @@ class Experiment:
         # =========================== TEST REPORT ==========================
         test_event = self.trainer.test()
 
+        test_report = classification_report(
+            test_event.artifacts['targets'],
+            test_event.artifacts['predictions'],
+            target_names=self.class_labels,
+            zero_division=0,
+            digits=4,
+            output_dict=True
+        )
+
+        # Generate confusion matrix
+        conf_matrix = confusion_matrix(
+            test_event.artifacts['targets'],
+            test_event.artifacts['predictions'],
+        )
+                
+        # Convert to dictionary for JSON serialization
+        conf_matrix_dict = {
+            "matrix": conf_matrix.tolist(),
+            "labels": self.class_labels
+        }
+
         print("Final Test Results:")
-        print(f"Test Accuracy: {test_event.metrics['accuracy']:.4f}")
+        print(f"Test Accuracy: {test_report['accuracy']:.4f}")
         print(
-            f"Macro Avg: P={test_event.metrics['macro avg']['precision']:.4f} "
-            f"R={test_event.metrics['macro avg']['recall']:.4f} "
-            f"F1={test_event.metrics['macro avg']['f1-score']:.4f}"
+            f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "
+            f"R={test_report['macro avg']['recall']:.4f} "
+            f"F1={test_report['macro avg']['f1-score']:.4f}"
         )
 
         self.log_dict["test_report"] = test_report
@@ -428,3 +460,51 @@ class Experiment:
         plot_norm_path = self.exp_results_dir / "confusion_matrix_normalized.png"
         plt.savefig(plot_norm_path, bbox_inches='tight')
         plt.close()
+
+    def _flatten_classification_report(report: dict) -> list[Metric]:
+        metrics = []
+        for key, value in report.items():
+            if isinstance(value, dict):
+                # Например, 'macro avg', 'weighted avg', или имя класса
+                for subkey, subval in value.items():
+                    if isinstance(subval, (int, float)):
+                        metrics.append(
+                            Metric(
+                                name=f"{key}.{subkey}",
+                                value=float(subval)
+                            )
+                        )
+            elif isinstance(value, (int, float)):
+                # Например, 'accuracy'
+                metrics.append(
+                    Metric(
+                        name=key,
+                        value=float(value)
+                    )
+                )
+        return metrics
+    
+    def save_checkpoint(self, epoch: int, val_loss: float, val_accuracy: float) -> None:
+        save_obj = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': val_loss,
+            'accuracy': val_accuracy
+        }
+        torch.save(save_obj, self.checkpoint_path)
+    
+    def save_model(self) -> None:
+        torch.save(self.model, self.model_path)
+    
+    @property
+    def checkpoint_path(self) -> Path:
+        if self._current_epoch is None:
+            return self.exp_results_dir / "ckpt.pth"
+        return self.exp_results_dir / f"ckpt_epoch{self._current_epoch:02d}.pth"
+
+    @property
+    def model_path(self) -> Path:
+        if self._current_epoch is None:
+            return self.exp_results_dir / "model.pth"
+        return self.exp_results_dir / f"model_epoch{self._current_epoch:02d}.pth"

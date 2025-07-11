@@ -1,16 +1,18 @@
 # src/trainer.py
 from pathlib import Path
-from typing import Any, Generator
-import json
+from typing import Generator
 from tqdm import tqdm
 
 import torch
-from sklearn.metrics import classification_report, confusion_matrix
-from src.config import CLASS_LABELS
-from src.schemas.configs import TrainerConfig, CriterionConfig, OptimizerConfig, SchedulerConfig, DataLoaderConfig
+from src.schemas.configs import (
+    TrainerConfig,
+    CriterionConfig,
+    OptimizerConfig,
+    SchedulerConfig,
+    DataLoaderConfig
+)
 from src.models.interior_classifier_EfficientNet import InteriorClassifier
-from src.schemas.training import TrainerEvent, TrainEpochEvent, TestEvent, ValidationEvent, EventType, Metric
-from pydantic import BaseModel
+from src.schemas.training import TrainEpochEvent, TestEvent, ValidationEvent, EventType
 
 
 class Trainer:
@@ -21,8 +23,7 @@ class Trainer:
             optimizer: torch.optim.Optimizer,
             scheduler: torch.optim.lr_scheduler.LRScheduler,
             epochs: int,
-            device: str,
-            exp_results_dir: Path
+            device: str
         ):
 
         self.model = model
@@ -37,13 +38,7 @@ class Trainer:
         self.val_loader: torch.utils.data.DataLoader | None = None
         self.test_loader: torch.utils.data.DataLoader | None = None
 
-        # Save paths
-        self.exp_results_dir = exp_results_dir
-        self.log_path = exp_results_dir / "training_report.json"
-
-        self._load_log()
         self._current_epoch: int | None = None
-        self._best_ckeckpoint_path: Path | None = None
 
     def train_epoch(self, epoch: int) -> TrainEpochEvent:
         self.model.train()
@@ -91,16 +86,16 @@ class Trainer:
 
     def validate(self) -> ValidationEvent:
         self.model.eval()
-
-        val_loss = 0.0
-        all_idxs: list[int] = []
-        all_preds: list[int] = []
         
         val_bar = tqdm(
             self.val_loader,
             desc=f'Epoch {self._current_epoch}/{self.epochs} [Val]',
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
+
+        val_loss = 0.0
+        targets: list[int] = []
+        predictions: list[int] = []
         with torch.no_grad():
             for inputs, _, class_idxs in val_bar:  # get batch [inputs, labels, class_idxs]
                 inputs, class_idxs = inputs.to(self.device), class_idxs.to(self.device)
@@ -109,43 +104,30 @@ class Trainer:
                 val_loss += loss.item() * inputs.size(0)
                 _, preds = torch.max(outputs, 1)
 
-                all_idxs.extend(class_idxs.cpu().numpy())
-                all_preds.extend(preds.cpu().numpy())
+                targets.extend(class_idxs.cpu().numpy())
+                predictions.extend(preds.cpu().numpy())
                 
                 val_bar.set_postfix({'val_loss': f'{loss.item():.4f}'})
 
         val_loss = round(val_loss / len(self.val_loader.dataset), 4)
 
-        report = classification_report(
-            all_idxs,
-            all_preds,
-            target_names=CLASS_LABELS,
-            zero_division=0,
-            digits=4,
-            output_dict=True
-        )
-
         event = ValidationEvent(
             type=EventType.validation,
             epoch=self._current_epoch,
             loss_value=val_loss,
-            metrics=self._flatten_classification_report(report)
+            artifacts={'targets': targets, 'predictions': predictions}
         )
         return event
 
-    def test(self) -> TestEvent:
-        # Перед тестированием подгружаем лучший чекпоинт, если он есть
-        if self._best_ckeckpoint_path is not None and self._best_ckeckpoint_path.exists():
-            checkpoint = torch.load(self._best_ckeckpoint_path, map_location=self.device)
+    def test(self, checkpoint_path: Path | None = None) -> TestEvent:
+        if checkpoint_path is not None:
+            checkpoint = torch.load(checkpoint_path, map_location=self.device)
             self.model.load_state_dict(checkpoint["model_state_dict"])
-            print(f"Loaded best checkpoint from {self._best_ckeckpoint_path}")
+            print(f"Loaded checkpoint from {checkpoint_path}")
         else:
-            print("Warning: Best checkpoint path is not set or file does not exist. Testing current model state.")
+            print("Testing current model state (no checkpoint loaded).")
 
         self.model.eval()
-
-        all_idxs: list[int] = []
-        all_preds: list[int] = []
 
         test_bar = tqdm(
             self.test_loader,
@@ -153,38 +135,21 @@ class Trainer:
             bar_format='{l_bar}{bar:20}{r_bar}{bar:-20b}'
         )
 
+        targets: list[int] = []
+        predictions: list[int] = []
         with torch.no_grad():
             for inputs, _, class_idxs in test_bar:  # get batch [inputs, labels, class_idxs]
                 inputs = inputs.to(self.device)
                 outputs = self.model(inputs)
                 _, preds = torch.max(outputs, 1)
 
-                all_idxs.extend(class_idxs.cpu().numpy())
-                all_preds.extend(preds.cpu().numpy())
-
-        report = classification_report(
-            all_idxs,
-            all_preds,
-            target_names=CLASS_LABELS,
-            zero_division=0,
-            digits=4,
-            output_dict=True
-        )
-
-        # Generate confusion matrix
-        conf_matrix = confusion_matrix(all_idxs, all_preds)
-                
-        # Convert to dictionary for JSON serialization
-        conf_matrix_dict = {
-            "matrix": conf_matrix.tolist(),
-            "labels": CLASS_LABELS
-        }
+                targets.extend(class_idxs.cpu().numpy())
+                predictions.extend(preds.cpu().numpy())
 
         event = TestEvent(
             type=EventType.test,
             loss_value=None,
-            metrics=self._flatten_classification_report(report),
-            artifacts={"confusion_matrix": conf_matrix_dict}
+            artifacts={'targets': targets, 'predictions': predictions}
         )
         return event
 
@@ -305,31 +270,6 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
-
-    def save_checkpoint(self, epoch: int, val_loss: float, val_accuracy: float) -> None:
-        save_obj = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'loss': val_loss,
-            'accuracy': val_accuracy
-        }
-        torch.save(save_obj, self.checkpoint_path)
-    
-    def save_model(self) -> None:
-        torch.save(self.model, self.model_path)
-    
-    @property
-    def checkpoint_path(self) -> Path:
-        if self._current_epoch is None:
-            return self.exp_results_dir / "ckpt.pth"
-        return self.exp_results_dir / f"ckpt_epoch{self._current_epoch:02d}.pth"
-
-    @property
-    def model_path(self) -> Path:
-        if self._current_epoch is None:
-            return self.exp_results_dir / "model.pth"
-        return self.exp_results_dir / f"model_epoch{self._current_epoch:02d}.pth"
     
     def _get_criterion_params(self):
         """
@@ -374,26 +314,3 @@ class Trainer:
             if key in valid_keys:
                 params[key] = value
         return params
-    
-    def _flatten_classification_report(report: dict) -> list[Metric]:
-        metrics = []
-        for key, value in report.items():
-            if isinstance(value, dict):
-                # Например, 'macro avg', 'weighted avg', или имя класса
-                for subkey, subval in value.items():
-                    if isinstance(subval, (int, float)):
-                        metrics.append(
-                            Metric(
-                                name=f"{key}.{subkey}",
-                                value=float(subval)
-                            )
-                        )
-            elif isinstance(value, (int, float)):
-                # Например, 'accuracy'
-                metrics.append(
-                    Metric(
-                        name=key,
-                        value=float(value)
-                    )
-                )
-        return metrics
