@@ -18,6 +18,8 @@ from src.datasets.utils.splitter import DatasetSplitter
 from src.datasets.utils.collector import SampleCollector
 from src.schemas.configs import ExperimentConfig
 from src.schemas.training import Metric
+from src.schemas.training import TrainEpochEvent, TestEvent, ValidationEvent
+
 
 class Experiment:
     def __init__(
@@ -157,7 +159,7 @@ class Experiment:
     def run(self) -> torch.nn.Module:
         """Запускает эксперимент"""
 
-        # 1. Подгатавливаем Trainer
+        # 1. Подготавливаем Trainer
         self.trainer.set_data_loaders(
             train_loader=self.train_loader,
             val_loader=self.val_loader,
@@ -167,7 +169,7 @@ class Experiment:
         # 2. Сохраняем конфиг
         self.save_config()
 
-        # 2. Запускаем обучение
+        # 3. Запускаем обучение
         print(f"Starting experiment {self.exp_number}")
         for train_event in self.trainer.train():
             self.log_dict["train_loss"].append(train_event.loss_value)

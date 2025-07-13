@@ -130,7 +130,6 @@ class TrainerConfig(BaseModel):
     scheduler_config: SchedulerConfig | None
     epochs: int
     device: str
-    exp_results_dir: Path
     train_loader_config: DataLoaderConfig | None
     val_loader_config: DataLoaderConfig | None
     test_loader_config: DataLoaderConfig | None
