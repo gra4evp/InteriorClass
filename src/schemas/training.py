@@ -19,7 +19,7 @@ class Metric(BaseModel):
 class TrainerEvent(BaseModel):
     type: EventType
     epoch: int | None = None
-    loss_value: float = None
+    loss_value: float | None = None
     metrics: dict[str, Metric] | None = None
     artifacts: dict[str, Any] | None = None
 

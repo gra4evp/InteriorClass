@@ -176,77 +176,25 @@ class Experiment:
 
             # ========================== VALIDATION REPORT ==============================
             val_event = self.trainer.validate()
+            improved, val_report = self._handle_validation_event(event=val_event)
 
-            val_report = classification_report(
-                val_event.artifacts['targets'],
-                val_event.artifacts['predictions'],
-                target_names=self.class_labels,
-                zero_division=0,
-                digits=4,
-                output_dict=True
-            )
-
-            val_accuracy = round(val_report['accuracy'], 4)
-            self.log_dict["val_loss"].append(val_event.loss_value)
-            self.log_dict["val_accuracy"].append(val_accuracy)
-
-            print(f"\nEpoch {train_event.epoch} Summary:")
-            print(f"Train Loss: {train_event.loss_value:.4f} | Val Loss: {val_event.loss_value:.4f}")
-            print(f"Val Accuracy: {val_accuracy:.4f}")
-            print(
-                f"Macro Avg: P={val_report['macro avg']['precision']:.4f} "
-                f"R={val_report['macro avg']['recall']:.4f} "
-                f"F1={val_report['macro avg']['f1-score']:.4f}"
+            # Логирование эпохи
+            self._print_epoch_summary(
+                epoch=train_event.epoch,
+                train_loss=train_event.loss_value,
+                val_loss=val_event.loss_value,
+                val_report=val_report,
+                improved=improved
             )
             
-            if val_event.loss_value < self.best_val_loss:
-                self.best_val_loss = val_event.loss_value
-                self.log_dict["best_val_loss"] = self.best_val_loss
-                self.save_checkpoint(train_event.epoch, val_event.loss_value, val_accuracy)
-                self.save_model()
-                self._best_ckeckpoint_path = self.checkpoint_path  # Сохраняем путь к лучшему чекпоинту
-                saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
-                print(f"Model saved to {saved_to_text} (Val Loss improved to {val_event.loss_value:.4f})")
-                print(f"Checkpoint saved to {saved_to_text} (Val Loss improved to {val_event.loss_value:.4f})")
-            self.save_log()
+            self._save_log()
         
         # =========================== TEST REPORT ==========================
         test_event = self.trainer.test()
+        test_report = self._handle_test_event(event=test_event)
+        self._print_test_summary(test_report=test_report)
 
-        test_report = classification_report(
-            test_event.artifacts['targets'],
-            test_event.artifacts['predictions'],
-            target_names=self.class_labels,
-            zero_division=0,
-            digits=4,
-            output_dict=True
-        )
-
-        # Generate confusion matrix
-        conf_matrix = confusion_matrix(
-            test_event.artifacts['targets'],
-            test_event.artifacts['predictions'],
-        )
-                
-        # Convert to dictionary for JSON serialization
-        conf_matrix_dict = {
-            "matrix": conf_matrix.tolist(),
-            "labels": self.class_labels
-        }
-
-        print("Final Test Results:")
-        print(f"Test Accuracy: {test_report['accuracy']:.4f}")
-        print(
-            f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "
-            f"R={test_report['macro avg']['recall']:.4f} "
-            f"F1={test_report['macro avg']['f1-score']:.4f}"
-        )
-
-        self.log_dict["test_report"] = test_report
-        self.log_dict["confusion_matrix"] = conf_matrix_dict
         self._save_log()
-                # Save confusion matrix plot
-        self._save_confusion_matrix_plot(conf_matrix=conf_matrix)
         
         return self.trainer.model
 
@@ -332,7 +280,10 @@ class Experiment:
         )
 
         # 6. Загрузка модели/весов
-        loaded, path = cls.load_model_from_dir(config.trainer_config.exp_results_dir, device=config.trainer_config.device)
+        loaded, path = cls.load_model_from_dir(
+            exp_results_dir=config.exp_dir / "results",
+            device=config.trainer_config.device
+        )
         if isinstance(loaded, dict) and 'model_state_dict' in loaded:
             trainer.model.load_state_dict(loaded['model_state_dict'])
         elif isinstance(loaded, torch.nn.Module):
@@ -488,24 +439,112 @@ class Experiment:
     def save_checkpoint(self, epoch: int, val_loss: float, val_accuracy: float) -> None:
         save_obj = {
             'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
+            'model_state_dict': self.trainer.model.state_dict(),
+            'optimizer_state_dict': self.trainer.optimizer.state_dict(),
             'loss': val_loss,
             'accuracy': val_accuracy
         }
         torch.save(save_obj, self.checkpoint_path)
     
     def save_model(self) -> None:
-        torch.save(self.model, self.model_path)
+        torch.save(self.trainer.model, self.model_path)
     
     @property
     def checkpoint_path(self) -> Path:
-        if self._current_epoch is None:
+        if self.trainer.current_epoch is None:
             return self.exp_results_dir / "ckpt.pth"
-        return self.exp_results_dir / f"ckpt_epoch{self._current_epoch:02d}.pth"
+        return self.exp_results_dir / f"ckpt_epoch{self.trainer.current_epoch:02d}.pth"
 
     @property
     def model_path(self) -> Path:
-        if self._current_epoch is None:
+        if self.trainer.current_epoch is None:
             return self.exp_results_dir / "model.pth"
-        return self.exp_results_dir / f"model_epoch{self._current_epoch:02d}.pth"
+        return self.exp_results_dir / f"model_epoch{self.trainer.current_epoch:02d}.pth"
+    
+    def _handle_validation_event(self, event: ValidationEvent) -> tuple[bool, dict]:
+        """Обработка события валидации и возврат флага, улучшилась ли модель"""
+        val_report = classification_report(
+            event.artifacts['targets'],
+            event.artifacts['predictions'],
+            target_names=self.class_labels,
+            zero_division=0,
+            digits=4,
+            output_dict=True
+        )
+
+        val_accuracy = round(val_report['accuracy'], 4)
+        self.log_dict["val_loss"].append(event.loss_value)
+        self.log_dict["val_accuracy"].append(val_accuracy)
+
+        improved = False
+        if event.loss_value < self._best_val_loss:
+            self._best_val_loss = event.loss_value
+            self.log_dict["best_val_loss"] = self._best_val_loss
+            self.save_checkpoint(event.epoch, event.loss_value, val_accuracy)
+            self.save_model()
+            self._best_ckeckpoint_path = self.checkpoint_path
+            improved = True
+            
+        return improved, val_report
+    
+    def _handle_test_event(self, event: TestEvent) -> dict:
+        """Обработка тестового события"""
+        test_report = classification_report(
+            event.artifacts['targets'],
+            event.artifacts['predictions'],
+            target_names=self.class_labels,
+            zero_division=0,
+            digits=4,
+            output_dict=True
+        )
+
+        conf_matrix = confusion_matrix(
+            event.artifacts['targets'],
+            event.artifacts['predictions'],
+        )
+
+        # Convert to dictionary for JSON serialization
+        conf_matrix_dict = {
+            "matrix": conf_matrix.tolist(),
+            "labels": self.class_labels
+        }
+
+        self.log_dict["test_report"] = test_report
+        self.log_dict["confusion_matrix"] = conf_matrix_dict
+
+        self._save_confusion_matrix_plot(conf_matrix=conf_matrix)
+
+        return test_report
+
+    def _print_epoch_summary(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        val_report: dict,
+        improved: bool
+    ):
+        """Печать сводки по эпохе"""
+        print(f"\nEpoch {epoch} Summary:")
+        print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+        print(f"Val Accuracy: {val_report['accuracy']:.4f}")
+        print(f"Macro Avg: ")
+        print(
+            f"P={val_report['macro avg']['precision']:.4f} "
+            f"R={val_report['macro avg']['recall']:.4f} "
+            f"F1={val_report['macro avg']['f1-score']:.4f}"
+        )
+        
+        if improved:
+            saved_to_text = self.exp_results_dir.relative_to(self.exp_results_dir.parent.parent.parent)
+            print(f"Model improved and saved to {saved_to_text} (Val Loss: {val_loss:.4f})")
+
+    def _print_test_summary(self, test_report: dict):
+        """Печать сводки по тестированию"""
+        print("Final Test Results:")
+        print(f"Test Accuracy: {test_report['accuracy']:.4f}")
+        print(
+            f"Macro Avg: P={test_report['macro avg']['precision']:.4f} "
+            f"R={test_report['macro avg']['recall']:.4f} "
+            f"F1={test_report['macro avg']['f1-score']:.4f}"
+        )

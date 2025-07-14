@@ -148,7 +148,6 @@ class Trainer:
 
         event = TestEvent(
             type=EventType.test,
-            loss_value=None,
             artifacts={'targets': targets, 'predictions': predictions}
         )
         return event
@@ -268,6 +267,10 @@ class Trainer:
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
+
+    @property
+    def current_epoch(self) -> int | None:
+        return self._current_epoch
     
     def _get_criterion_params(self):
         """
